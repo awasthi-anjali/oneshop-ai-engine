@@ -289,6 +289,8 @@ export interface SmartCartResponse {
   discount: number
   total: number
   estimated_savings: number
+  one_time_total: number
+  monthly_total: number
 }
 
 export interface CheckoutResponse {
@@ -299,6 +301,8 @@ export interface CheckoutResponse {
   savings: number
   discount: number
   total: number
+  one_time_total: number
+  monthly_total: number
   message: string
 }
 
@@ -325,6 +329,8 @@ export interface IntelligenceProfile {
   discount?: number
   total?: number
   estimated_savings: number
+  one_time_total?: number
+  monthly_total?: number
   ai_powered: boolean
   abandonment: AbandonmentStatus | null
   recommendation_pipeline?: 'ai_validated' | 'semantic_backup' | 'rules'

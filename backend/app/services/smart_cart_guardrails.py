@@ -2,70 +2,76 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from app.models.schemas import BundleSuggestion, CrossSellItem, Product
+from app.models.schemas import BundleSuggestion, CrossSellItem, Product, ProductCategory
+from app.services.product_catalog import catalog
 
 MAX_CROSS_SELL = 2
 MAX_BUNDLES = 1
 
-_DEFAULT_NUDGE = "Your cart is waiting — complete checkout for free shipping today!"
+_DEFAULT_NUDGE = "Review your cart and compatible add-ons before checkout."
+_EMPTY_NUDGE = "Add items to your cart to see compatible add-ons."
 
 
 def _recalculate_bundle(bundle: BundleSuggestion, products: list[Product]) -> BundleSuggestion:
-    original_total = sum(product.price for product in products)
-    discount_percent = bundle.discount_percent or 0.0
-    if discount_percent > 0:
-        savings = round(original_total * discount_percent / 100, 2)
-    else:
-        savings = round(min(bundle.savings, original_total), 2)
+    original_total = round(sum(product.price for product in products), 2)
     return bundle.model_copy(update={
         "products": products,
         "product_ids": [product.id for product in products],
-        "original_price": round(original_total, 2),
-        "total_price": round(max(original_total - savings, 0), 2),
-        "savings": savings,
+        "original_price": original_total,
+        "total_price": original_total,
+        "discount_percent": 0.0,
+        "savings": 0.0,
+        "reason": "Compatible add-ons selected from the current catalog.",
     })
 
 
-def _sanitize_nudge(nudge: str, checkout_tip: str, discount: float) -> tuple[str, str]:
-    """Prevent LLM nudge from claiming savings that rules did not compute."""
-    cleaned_nudge = (nudge or "").strip()
-    cleaned_tip = (checkout_tip or "").strip()
-    if discount <= 0 and re.search(r"\bsave(?:s|d)?\s+\$", cleaned_nudge, re.I):
-        cleaned_nudge = _DEFAULT_NUDGE
-    if discount <= 0 and re.search(r"\b\d+\s*%\s*off", cleaned_nudge, re.I):
-        cleaned_nudge = _DEFAULT_NUDGE
-    return cleaned_nudge, cleaned_tip
+def _catalog_product(product_id: str, cart_ids: set[str]) -> Product | None:
+    product = catalog.get_by_id(product_id)
+    if not product or not product.in_stock or product.id in cart_ids:
+        return None
+    return product
 
 
 def validate_smart_cart_output(smart: dict[str, Any]) -> dict[str, Any]:
     cart: list[Product] = list(smart.get("cart") or [])
     cart_ids = {product.id for product in cart}
 
-    cross_sell: list[CrossSellItem] = [
-        item for item in smart.get("cross_sell_suggestions", [])
-        if item.product.id not in cart_ids
-    ][:MAX_CROSS_SELL]
+    cross_sell: list[CrossSellItem] = []
+    seen_cross_sell: set[str] = set()
+    for item in smart.get("cross_sell_suggestions", []):
+        product = _catalog_product(item.product.id, cart_ids)
+        if not product or product.id in seen_cross_sell:
+            continue
+        seen_cross_sell.add(product.id)
+        cross_sell.append(CrossSellItem(
+            product=product,
+            rate=0,
+            reason="Compatible catalog add-on",
+        ))
+        if len(cross_sell) >= MAX_CROSS_SELL:
+            break
 
     bundles: list[BundleSuggestion] = []
     for bundle in smart.get("bundles", [])[:MAX_BUNDLES]:
-        missing_products = [product for product in bundle.products if product.id not in cart_ids]
+        missing_products = [
+            product
+            for product_id in bundle.product_ids
+            if (product := _catalog_product(product_id, cart_ids))
+        ]
         if not missing_products:
             continue
-        if len(missing_products) != len(bundle.products):
-            bundles.append(_recalculate_bundle(bundle, missing_products))
-        else:
-            bundles.append(bundle)
+        bundles.append(_recalculate_bundle(bundle, missing_products))
 
     subtotal = round(sum(product.price for product in cart), 2)
-    discount = round(sum(bundle.savings for bundle in bundles), 2)
-    total = round(max(subtotal - discount, 0), 2)
-    nudge, checkout_tip = _sanitize_nudge(
-        smart.get("nudge", ""),
-        smart.get("checkout_tip", ""),
-        discount,
+    one_time_total = round(
+        sum(product.price for product in cart if product.category != ProductCategory.PLAN),
+        2,
+    )
+    monthly_total = round(
+        sum(product.price for product in cart if product.category == ProductCategory.PLAN),
+        2,
     )
 
     return {
@@ -73,10 +79,12 @@ def validate_smart_cart_output(smart: dict[str, Any]) -> dict[str, Any]:
         "cart": cart,
         "cross_sell_suggestions": cross_sell,
         "bundles": bundles,
-        "nudge": nudge,
-        "checkout_tip": checkout_tip,
+        "nudge": _DEFAULT_NUDGE if cart else _EMPTY_NUDGE,
+        "checkout_tip": "",
         "subtotal": subtotal,
-        "discount": discount,
-        "total": total,
-        "estimated_savings": discount,
+        "discount": 0.0,
+        "total": subtotal,
+        "estimated_savings": 0.0,
+        "one_time_total": one_time_total,
+        "monthly_total": monthly_total,
     }

@@ -129,6 +129,8 @@ export default function ShopPage({
     subtotal: number
     discount: number
     total: number
+    oneTimeTotal: number
+    monthlyTotal: number
     estimatedSavings: number
     cartItems: Product[]
   }>({
@@ -140,6 +142,8 @@ export default function ShopPage({
     subtotal: 0,
     discount: 0,
     total: 0,
+    oneTimeTotal: 0,
+    monthlyTotal: 0,
     estimatedSavings: 0,
     cartItems: [],
   })
@@ -231,6 +235,8 @@ export default function ShopPage({
         subtotal: profile.subtotal,
         discount: profile.discount ?? profile.estimated_savings ?? 0,
         total: profile.total ?? profile.subtotal,
+        oneTimeTotal: profile.one_time_total ?? profile.subtotal,
+        monthlyTotal: profile.monthly_total ?? 0,
         estimatedSavings: profile.estimated_savings,
         cartItems: profile.cart,
       })
@@ -827,7 +833,6 @@ export default function ShopPage({
           {abandonment?.is_abandoned && (
             <AbandonmentBanner
               message={abandonment.recovery_message}
-              discount={abandonment.discount_offer}
               onCheckout={() => setShowCheckout(true)}
               onDismiss={handleDismissAbandonment}
             />
@@ -1288,9 +1293,8 @@ export default function ShopPage({
         open={showCheckout}
         cart={cartProducts}
         sessionId={sessionId}
-        subtotal={smartCart.subtotal}
-        estimatedSavings={smartCart.estimatedSavings}
-        discountOffer={abandonment?.discount_offer ?? 0}
+        oneTimeTotal={smartCart.oneTimeTotal}
+        monthlyTotal={smartCart.monthlyTotal}
         onClose={() => setShowCheckout(false)}
         onSuccess={handleCheckoutSuccess}
       />

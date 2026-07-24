@@ -143,6 +143,8 @@ def _fallback_profile(session_id: str, limit: int) -> dict:
         "discount": smart["discount"],
         "total": smart["total"],
         "estimated_savings": smart["estimated_savings"],
+        "one_time_total": smart["one_time_total"],
+        "monthly_total": smart["monthly_total"],
         "ai_powered": rec_ai or nba_ai or smart["ai_powered"],
         "abandonment": abandon,
         "recommendation_pipeline": "rules",
@@ -270,16 +272,15 @@ def _ai_orchestrate(session_id: str, limit: int) -> dict | None:
     if not next_actions:
         _, next_actions, _ = get_next_best_actions(session_id)
 
-    # Smart cart — rules-based cross-sell, bundles, and totals; AI nudge/tip only
-    raw_cart = data.get("smart_cart", {})
+    # Smart Cart facts and copy are entirely backend-owned.
     smart = get_smart_cart(session_id)
     bundles = smart["bundles"]
     cross_sell = smart["cross_sell_suggestions"]
     subtotal = smart["subtotal"]
     discount = smart["discount"]
     total = smart["total"]
-    nudge = raw_cart.get("nudge") or smart["nudge"]
-    checkout_tip = raw_cart.get("checkout_tip") or smart["checkout_tip"]
+    nudge = smart["nudge"]
+    checkout_tip = smart["checkout_tip"]
 
     abandon = session_store.get_abandonment_status(session_id)
 
@@ -298,6 +299,8 @@ def _ai_orchestrate(session_id: str, limit: int) -> dict | None:
         "discount": discount,
         "total": total,
         "estimated_savings": discount,
+        "one_time_total": smart["one_time_total"],
+        "monthly_total": smart["monthly_total"],
         "ai_powered": True,
         "abandonment": abandon,
         "recommendation_pipeline": recommendation_pipeline,

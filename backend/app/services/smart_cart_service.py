@@ -1,39 +1,31 @@
-import json
 from typing import Any
 
-from app.config import settings
 from app.models.schemas import BundleSuggestion, CrossSellItem, Product, ProductCategory
-from app.services.ai_client import get_openai_client
 from app.services.interaction_store import interaction_store
 from app.services.smart_cart_guardrails import validate_smart_cart_output
 from app.services.product_catalog import catalog
 from app.services.session_store import session_store
-CART_PROMPT = """Analyze the customer's cart and suggest:
-1. A short nudge message (1 sentence) to encourage checkout or add items
-2. A checkout tip if something looks incompatible (e.g. tablet with low-data plan)
-
-Return JSON: {"nudge": "...", "checkout_tip": "..."}"""
 
 CO_PURCHASE_MAP: dict[str, list[dict[str, Any]]] = {
     "phone:Apple": [
-        {"tag": "audio", "brand": "Apple", "rate": 73, "label": "AirPods Pro"},
-        {"tag": "case", "brand": None, "rate": 87, "label": "Protective Case"},
-        {"tag": "charger", "brand": "Apple", "rate": 65, "label": "MagSafe Charger"},
+        {"tag": "audio", "brand": "Apple"},
+        {"tag": "case", "brand": None},
+        {"tag": "charger", "brand": "Apple"},
     ],
     "phone:Samsung": [
-        {"tag": "audio", "brand": "Samsung", "rate": 68, "label": "Galaxy Buds"},
-        {"tag": "case", "brand": None, "rate": 82, "label": "Clear Case"},
+        {"tag": "audio", "brand": "Samsung"},
+        {"tag": "case", "brand": None},
     ],
     "phone:Google": [
-        {"tag": "audio", "brand": None, "rate": 61, "label": "Wireless Earbuds"},
-        {"tag": "case", "brand": None, "rate": 79, "label": "Pixel Case"},
+        {"tag": "audio", "brand": None},
+        {"tag": "case", "brand": None},
     ],
     "phone:*": [
-        {"tag": "case", "brand": None, "rate": 75, "label": "Phone Case"},
-        {"tag": "audio", "brand": None, "rate": 58, "label": "Wireless Earbuds"},
+        {"tag": "case", "brand": None},
+        {"tag": "audio", "brand": None},
     ],
     "tablet:*": [
-        {"tag": "case", "brand": None, "rate": 91, "label": "Tablet Case"},
+        {"tag": "case", "brand": None},
     ],
 }
 
@@ -42,15 +34,15 @@ BUNDLE_RULES: list[dict[str, Any]] = [
         "name": "Phone Essentials Bundle",
         "trigger_categories": [ProductCategory.PHONE],
         "suggest_tags": ["case"],
-        "discount_percent": 10,
-        "description": "Protect your new phone — save 10%",
+        "discount_percent": 0,
+        "description": "A protective add-on selected from the current catalog.",
     },
     {
         "name": "Device + Plan Bundle",
         "trigger_categories": [ProductCategory.PHONE, ProductCategory.TABLET],
         "suggest_categories": [ProductCategory.PLAN],
-        "discount_percent": 20,
-        "description": "Add a plan and save 20%",
+        "discount_percent": 0,
+        "description": "A plan option selected from the current catalog.",
     },
 ]
 
@@ -170,19 +162,15 @@ def get_cross_sell_suggestions(
         product = _find_product_by_tag(rule["tag"], rule.get("brand"), cart_ids, profile)
         if not product:
             continue
-        rate = int(rule["rate"])
+        reason = "Compatible catalog add-on"
         if product.brand in preferred:
-            rate = min(rate + 5, 99)
-        reason = f"{rate}% of buyers also added this"
-        if product.brand in preferred:
-            reason += " · matches your brand preference"
+            reason += " · matches your recorded brand preference"
         suggestions.append(CrossSellItem(
             product=product,
-            rate=rate,
+            rate=0,
             reason=reason,
         ))
 
-    suggestions.sort(key=lambda item: item.rate, reverse=True)
     return suggestions[:2]
 
 
@@ -222,9 +210,9 @@ def detect_bundles(
             continue
 
         original_total = sum(p.price for p in suggested_products)
-        discount_percent = float(rule["discount_percent"])
-        savings = round(original_total * discount_percent / 100, 2)
-        bundle_price = round(original_total - savings, 2)
+        discount_percent = 0.0
+        savings = 0.0
+        bundle_price = round(original_total, 2)
 
         bundles.append(BundleSuggestion(
             name=rule["name"],
@@ -253,11 +241,9 @@ def _resolve_trigger_product(cart: list[Product], session_id: str) -> Product | 
     return cart[0] if cart else None
 
 
-def _calculate_cart_totals(cart: list[Product], bundles: list[BundleSuggestion]) -> tuple[float, float, float]:
+def _calculate_cart_totals(cart: list[Product]) -> tuple[float, float, float]:
     subtotal = round(sum(p.price for p in cart), 2)
-    discount = round(sum(b.savings for b in bundles), 2)
-    total = round(max(subtotal - discount, 0), 2)
-    return subtotal, discount, total
+    return subtotal, 0.0, subtotal
 
 
 def format_smart_cart_chat_hints(smart: dict[str, Any]) -> dict[str, Any]:
@@ -275,7 +261,6 @@ def format_smart_cart_chat_hints(smart: dict[str, Any]) -> dict[str, Any]:
         {
             "name": bundle.name,
             "reason": bundle.reason,
-            "savings": bundle.savings,
             "products": [product.name for product in bundle.products],
         }
         for bundle in smart.get("bundles", [])
@@ -289,15 +274,15 @@ def format_smart_cart_chat_hints(smart: dict[str, Any]) -> dict[str, Any]:
     if bundles:
         bundle = bundles[0]
         parts.append(
-            f"Bundle: {bundle['name']} — {bundle['reason']} "
-            f"(save ${bundle['savings']:.2f} on {', '.join(bundle['products'])})"
+            f"Compatible add-on group: {bundle['name']} — {bundle['reason']} "
+            f"({', '.join(bundle['products'])})"
         )
     return {
         "cross_sell": cross_sell,
         "bundles": bundles,
         "summary": " ".join(parts),
         "note": (
-            "These are rules-based Smart Cart suggestions from the current cart and profile. "
+            "These are catalog-grounded Smart Cart suggestions from the current cart and profile. "
             "You may mention them, but never add items to the cart."
         ),
     }
@@ -317,36 +302,21 @@ def get_smart_cart(session_id: str, user_id: str | None = None) -> dict[str, Any
     bundles = detect_bundles(cart, profile)
     trigger = _resolve_trigger_product(cart, session_id)
     cross_sell = get_cross_sell_suggestions(cart, trigger, profile)
-    subtotal, discount, total = _calculate_cart_totals(cart, bundles)
-    nudge = "Your cart is waiting — complete checkout for free shipping today!"
+    subtotal, discount, total = _calculate_cart_totals(cart)
+    one_time_total = round(
+        sum(product.price for product in cart if product.category != ProductCategory.PLAN),
+        2,
+    )
+    monthly_total = round(
+        sum(product.price for product in cart if product.category == ProductCategory.PLAN),
+        2,
+    )
+    nudge = "Review your cart and compatible add-ons before checkout."
     checkout_tip = ""
     ai_powered = False
 
-    client = get_openai_client()
-    if client and cart:
-        try:
-            cart_data = [{"name": p.name, "category": p.category.value, "price": p.price} for p in cart]
-            response = client.chat.completions.create(
-                model=settings.openai_model,
-                messages=[
-                    {"role": "system", "content": CART_PROMPT},
-                    {"role": "user", "content": json.dumps({
-                        "cart": cart_data,
-                        "bundles": [b.name for b in bundles],
-                        "cross_sell": [c.product.name for c in cross_sell],
-                    })},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.5,
-            )
-            data = json.loads(response.choices[0].message.content or "{}")
-            nudge = data.get("nudge", nudge)
-            checkout_tip = data.get("checkout_tip", "")
-            ai_powered = True
-        except Exception:
-            pass
-    elif not cart:
-        nudge = "Add items to your cart to see bundle savings and checkout tips."
+    if not cart:
+        nudge = "Add items to your cart to see compatible add-ons."
 
     result = {
         "cart": cart,
@@ -359,6 +329,8 @@ def get_smart_cart(session_id: str, user_id: str | None = None) -> dict[str, Any
         "discount": discount,
         "total": total,
         "estimated_savings": discount,
+        "one_time_total": one_time_total,
+        "monthly_total": monthly_total,
     }
     return validate_smart_cart_output(result)
 

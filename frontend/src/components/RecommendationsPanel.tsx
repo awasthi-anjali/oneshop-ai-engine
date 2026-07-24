@@ -32,6 +32,8 @@ interface Props {
     subtotal: number
     discount: number
     total: number
+    oneTimeTotal: number
+    monthlyTotal: number
     cartItems: Product[]
   }
   onCheckout: () => void
@@ -169,9 +171,8 @@ export default function RecommendationsPanel({
         aiPowered={smartCart.aiPowered}
         cartCount={cartCount}
         cartItems={smartCart.cartItems}
-        subtotal={smartCart.subtotal}
-        discount={smartCart.discount}
-        total={smartCart.total}
+        oneTimeTotal={smartCart.oneTimeTotal}
+        monthlyTotal={smartCart.monthlyTotal}
         onCheckout={onCheckout}
         onAddBundle={onAddBundle}
         onAddCrossSell={onAddCrossSell}
