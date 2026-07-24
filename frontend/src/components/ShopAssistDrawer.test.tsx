@@ -1,7 +1,7 @@
 import { useState, type ComponentProps } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ChatAction,
   Product,
@@ -105,7 +105,42 @@ function baseProps(overrides: Partial<ComponentProps<typeof ShopAssistDrawer>> =
   }
 }
 
+class MockSpeechRecognition {
+  lang = 'en-US'
+  continuous = false
+  interimResults = true
+  onstart: (() => void) | null = null
+  onend: (() => void) | null = null
+  onerror: ((event: { error: string }) => void) | null = null
+  onresult: ((event: { resultIndex: number; results: Array<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null = null
+
+  start = vi.fn(() => {
+    this.onstart?.()
+    this.onresult?.({
+      resultIndex: 0,
+      results: [{ isFinal: true, 0: { transcript: 'Android camera phone under $700' } }],
+    })
+    this.onend?.()
+  })
+
+  stop = vi.fn(() => {
+    this.onend?.()
+  })
+
+  abort = vi.fn(() => {
+    this.onend?.()
+  })
+}
+
 describe('ShopAssistDrawer', () => {
+  beforeEach(() => {
+    ;(window as Window & { SpeechRecognition?: typeof MockSpeechRecognition }).SpeechRecognition =
+      MockSpeechRecognition
+  })
+
+  afterEach(() => {
+    delete (window as Window & { SpeechRecognition?: typeof MockSpeechRecognition }).SpeechRecognition
+  })
   it('keeps conversation and draft state when closed and reopened', async () => {
     const user = userEvent.setup()
 
@@ -153,6 +188,19 @@ describe('ShopAssistDrawer', () => {
 
     rerender(<ShopAssistDrawer {...baseProps({ draft: 'ready', loading: true, onSend })} />)
     expect(screen.getByRole('button', { name: 'Send to ShopAssist' })).toBeDisabled()
+  })
+
+  it('auto-sends voice input after speech is converted to text', async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    const onDraftChange = vi.fn()
+    render(
+      <ShopAssistDrawer {...baseProps({ onSend, onDraftChange })} />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Start voice input' }))
+    expect(onDraftChange).toHaveBeenCalledWith('Android camera phone under $700')
+    expect(onSend).toHaveBeenCalledWith('Android camera phone under $700')
   })
 
   it('shows exact cadence and totals and submits only validated proposal IDs', async () => {
