@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react'
 import type { NextBestAction } from '../api'
 import './NextBestActionBanner.css'
 
@@ -5,7 +6,7 @@ interface Props {
   actions: NextBestAction[]
   aiPowered: boolean
   funnelStage: string
-  onActionClick: (label: string) => void
+  onActionClick: (label: string, event: MouseEvent<HTMLButtonElement>) => void
 }
 
 export default function NextBestActionBanner({
@@ -28,7 +29,7 @@ export default function NextBestActionBanner({
           <button
             key={a.action}
             className="nba-chip"
-            onClick={() => onActionClick(a.label)}
+            onClick={(event) => onActionClick(a.label, event)}
           >
             {a.label}
           </button>

@@ -7,20 +7,30 @@
 }
 
 :root {
-  --bg: #0f1117;
-  --surface: #1a1d27;
-  --surface-hover: #22263a;
-  --border: #2a2f45;
-  --text: #e8eaef;
-  --text-muted: #8b92a8;
-  --primary: #6366f1;
-  --primary-hover: #818cf8;
-  --accent: #22d3ee;
-  --success: #34d399;
-  --user-bubble: #6366f1;
-  --assistant-bubble: #1e2235;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-secondary: #f1f3f5;
+  --surface-hover: #e9ecef;
+  --border: #d9dde3;
+  --border-strong: #aeb4bd;
+  --text: #1b1f23;
+  --text-muted: #5f6670;
+  --primary: #e20074;
+  --primary-hover: #bd0061;
+  --primary-soft: #fce7f3;
+  --primary-border: #ef9cc7;
+  --accent: #a00052;
+  --focus: #7c3aed;
+  --success: #15803d;
+  --success-soft: #dcfce7;
+  --warning: #8a3f05;
+  --warning-soft: #fff7ed;
+  --error: #b91c1c;
+  --error-soft: #fef2f2;
+  --user-bubble: #e20074;
+  --assistant-bubble: #f1f3f5;
   --radius: 12px;
-  --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  --shadow: 0 6px 24px rgba(27, 31, 35, 0.12);
 }
 
 body {
@@ -44,6 +54,14 @@ button {
 
 input, textarea {
   font-family: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
 }
 
 ::-webkit-scrollbar {

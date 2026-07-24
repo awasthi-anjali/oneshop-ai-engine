@@ -24,10 +24,10 @@
   font-size: 0.6rem;
   padding: 2px 8px;
   border-radius: 10px;
-  background: rgba(52, 211, 153, 0.15);
+  background: var(--success-soft);
   color: var(--success);
   font-weight: 700;
-  border: 1px solid rgba(52, 211, 153, 0.3);
+  border: 1px solid var(--success);
 }
 
 .rec-ecosystem {
@@ -81,7 +81,7 @@
 .rec-intent {
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
-  background: rgba(99, 102, 241, 0.06);
+  background: var(--primary-soft);
 }
 
 .rec-intent-label {
@@ -109,9 +109,9 @@
   font-size: 0.65rem;
   padding: 2px 8px;
   border-radius: 12px;
-  background: rgba(34, 211, 238, 0.12);
+  background: var(--surface-secondary);
   color: var(--accent);
-  border: 1px solid rgba(34, 211, 238, 0.25);
+  border: 1px solid var(--border);
 }
 
 .rec-list {
@@ -139,7 +139,7 @@
 }
 
 .rec-item:hover {
-  border-color: rgba(99, 102, 241, 0.4);
+  border-color: var(--primary-border);
 }
 
 .rec-item-img {
@@ -148,7 +148,7 @@
   border-radius: 8px;
   object-fit: cover;
   flex-shrink: 0;
-  background: #12151f;
+  background: var(--surface-secondary);
 }
 
 .rec-item-info {
@@ -210,18 +210,18 @@
 }
 
 .rec-icon-btn:hover {
-  border-color: #f472b6;
+  border-color: var(--primary);
 }
 
 .rec-icon-btn.active {
-  border-color: #f472b6;
-  color: #f472b6;
-  background: rgba(244, 114, 182, 0.1);
+  border-color: var(--primary);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .rec-icon-btn.cart.active {
   border-color: var(--success);
-  background: rgba(52, 211, 153, 0.1);
+  background: var(--success-soft);
 }
 
 @media (max-width: 960px) {
