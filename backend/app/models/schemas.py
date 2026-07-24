@@ -305,7 +305,15 @@ class BundleSuggestion(BaseModel):
     products: list[Product]
     product_ids: list[str] = Field(default_factory=list)
     total_price: float
+    original_price: float = 0
+    discount_percent: float = 0
     savings: float
+    reason: str
+
+
+class CrossSellItem(BaseModel):
+    product: Product
+    rate: int
     reason: str
 
 
@@ -313,10 +321,13 @@ class SmartCartResponse(BaseModel):
     session_id: str
     cart: list[Product] = Field(default_factory=list)
     bundles: list[BundleSuggestion] = Field(default_factory=list)
+    cross_sell_suggestions: list[CrossSellItem] = Field(default_factory=list)
     nudge: str = ""
     checkout_tip: str = ""
     ai_powered: bool = False
     subtotal: float = 0
+    discount: float = 0
+    total: float = 0
     estimated_savings: float = 0
 
 
@@ -360,9 +371,12 @@ class IntelligenceProfileResponse(BaseModel):
     funnel_stage: str = "new"
     cart: list[Product] = Field(default_factory=list)
     bundles: list[BundleSuggestion] = Field(default_factory=list)
+    cross_sell_suggestions: list[CrossSellItem] = Field(default_factory=list)
     nudge: str = ""
     checkout_tip: str = ""
     subtotal: float = 0
+    discount: float = 0
+    total: float = 0
     estimated_savings: float = 0
     ai_powered: bool = False
     abandonment: AbandonmentResponse | None = None

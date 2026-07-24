@@ -15,14 +15,13 @@ from app.models.schemas import (
 )
 from app.services.ai_client import get_openai_client, is_ai_enabled
 from app.services.catalog_retrieval import catalog_compact, semantic_retrieve_with_meta
-from app.services.checkout_service import calculate_totals
 from app.services.customer_context import build_customer_context, get_funnel_stage
 from app.services.intent_engine import extract_intent_from_signals
 from app.services.next_best_action_service import get_next_best_actions
 from app.services.product_catalog import catalog
 from app.services.recommendation_validator import validate_recommendations
 from app.services.session_store import session_store
-from app.services.smart_cart_service import _rule_bundles, get_smart_cart
+from app.services.smart_cart_service import get_smart_cart
 
 ORCHESTRATOR_PROMPT = """You are the Commerce Intelligence Orchestrator for OneShop.
 Given customer context and the product catalog, return ONE JSON object with all decisions.
@@ -126,7 +125,7 @@ def _fallback_profile(session_id: str, limit: int) -> dict:
     viewed = session_store.get_viewed(session_id)
     intent, recommendations, rec_ai = get_recommendations(session_id, limit=limit)
     stage, actions, nba_ai = get_next_best_actions(session_id)
-    cart_items, bundles, nudge, tip, cart_ai, subtotal, savings = get_smart_cart(session_id)
+    smart = get_smart_cart(session_id)
     abandon = session_store.get_abandonment_status(session_id)
 
     return {
@@ -135,13 +134,16 @@ def _fallback_profile(session_id: str, limit: int) -> dict:
         "recommendations": recommendations,
         "next_actions": actions,
         "funnel_stage": stage,
-        "cart": cart_items,
-        "bundles": bundles,
-        "nudge": nudge,
-        "checkout_tip": tip,
-        "subtotal": subtotal,
-        "estimated_savings": savings,
-        "ai_powered": rec_ai or nba_ai or cart_ai,
+        "cart": smart["cart"],
+        "bundles": smart["bundles"],
+        "cross_sell_suggestions": smart["cross_sell_suggestions"],
+        "nudge": smart["nudge"],
+        "checkout_tip": smart["checkout_tip"],
+        "subtotal": smart["subtotal"],
+        "discount": smart["discount"],
+        "total": smart["total"],
+        "estimated_savings": smart["estimated_savings"],
+        "ai_powered": rec_ai or nba_ai or smart["ai_powered"],
         "abandonment": abandon,
         "recommendation_pipeline": "rules",
         "retrieval_method": "none",
@@ -268,16 +270,16 @@ def _ai_orchestrate(session_id: str, limit: int) -> dict | None:
     if not next_actions:
         _, next_actions, _ = get_next_best_actions(session_id)
 
-    # Smart cart
+    # Smart cart — rules-based cross-sell, bundles, and totals; AI nudge/tip only
     raw_cart = data.get("smart_cart", {})
-    rule_bundles = _rule_bundles(cart)
-    bundles = _resolve_bundles(raw_cart.get("bundles", []), cart, rule_bundles)
-    subtotal, estimated_savings, _, _ = calculate_totals(cart)
-    nudge = raw_cart.get("nudge") or (
-        "Add items to your cart to see bundle savings and checkout tips."
-        if not cart else "Your cart is waiting — complete checkout for free shipping today!"
-    )
-    checkout_tip = raw_cart.get("checkout_tip", "")
+    smart = get_smart_cart(session_id)
+    bundles = smart["bundles"]
+    cross_sell = smart["cross_sell_suggestions"]
+    subtotal = smart["subtotal"]
+    discount = smart["discount"]
+    total = smart["total"]
+    nudge = raw_cart.get("nudge") or smart["nudge"]
+    checkout_tip = raw_cart.get("checkout_tip") or smart["checkout_tip"]
 
     abandon = session_store.get_abandonment_status(session_id)
 
@@ -289,10 +291,13 @@ def _ai_orchestrate(session_id: str, limit: int) -> dict | None:
         "funnel_stage": intent.funnel_stage or get_funnel_stage(session_id),
         "cart": cart,
         "bundles": bundles,
+        "cross_sell_suggestions": cross_sell,
         "nudge": nudge,
         "checkout_tip": checkout_tip,
         "subtotal": subtotal,
-        "estimated_savings": estimated_savings,
+        "discount": discount,
+        "total": total,
+        "estimated_savings": discount,
         "ai_powered": True,
         "abandonment": abandon,
         "recommendation_pipeline": recommendation_pipeline,

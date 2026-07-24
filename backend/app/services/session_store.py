@@ -21,6 +21,7 @@ class SessionStore:
         self._session_to_customer: dict[str, str] = {}
         self._last_channel: dict[str, str] = {}
         self._channels_used: dict[str, set[str]] = {}
+        self._last_cart_add: dict[str, str] = {}
 
     def get_or_create(self, session_id: str | None) -> str:
         sid = session_id or str(uuid.uuid4())
@@ -78,8 +79,12 @@ class SessionStore:
     def add_to_cart(self, session_id: str, product_id: str) -> list[str]:
         self.get_or_create(session_id)
         self._carts[session_id].add(product_id)
+        self._last_cart_add[session_id] = product_id
         self._touch_cart(session_id)
         return list(self._carts[session_id])
+
+    def get_last_cart_add(self, session_id: str) -> str | None:
+        return self._last_cart_add.get(session_id)
 
     def add_bundle_to_cart(self, session_id: str, product_ids: list[str]) -> list[str]:
         self.get_or_create(session_id)

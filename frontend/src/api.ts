@@ -265,7 +265,15 @@ export interface BundleSuggestion {
   products: Product[]
   product_ids: string[]
   total_price: number
+  original_price?: number
+  discount_percent?: number
   savings: number
+  reason: string
+}
+
+export interface CrossSellItem {
+  product: Product
+  rate: number
   reason: string
 }
 
@@ -273,10 +281,13 @@ export interface SmartCartResponse {
   session_id: string
   cart: Product[]
   bundles: BundleSuggestion[]
+  cross_sell_suggestions: CrossSellItem[]
   nudge: string
   checkout_tip: string
   ai_powered: boolean
   subtotal: number
+  discount: number
+  total: number
   estimated_savings: number
 }
 
@@ -307,9 +318,12 @@ export interface IntelligenceProfile {
   funnel_stage: string
   cart: Product[]
   bundles: BundleSuggestion[]
+  cross_sell_suggestions?: CrossSellItem[]
   nudge: string
   checkout_tip: string
   subtotal: number
+  discount?: number
+  total?: number
   estimated_savings: number
   ai_powered: boolean
   abandonment: AbandonmentStatus | null
