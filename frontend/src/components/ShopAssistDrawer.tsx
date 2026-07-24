@@ -446,7 +446,7 @@ export default function ShopAssistDrawer({
                     {cartProposal.excluded_product_ids.length === 1 ? '' : 's'} already in your cart will not be added twice.
                   </p>
                 )}
-                <p>Nothing changes in your cart until you confirm.</p>
+                <p>Nothing changes until you allow this step.</p>
                 <button
                   className="confirm-proposal"
                   onClick={() => onConfirmProposal(cartProposal.proposal_id)}
@@ -457,8 +457,8 @@ export default function ShopAssistDrawer({
                     : confirmed
                       ? 'Added to cart'
                       : proposalProducts.length === 1
-                        ? 'Confirm and add exact item'
-                        : 'Confirm and add exact bundle'}
+                        ? 'Allow & add item'
+                        : 'Allow & add bundle'}
                 </button>
               </>
             ) : (

@@ -5,6 +5,7 @@ from app.config import settings
 from app.models.schemas import BundleSuggestion, CrossSellItem, Product, ProductCategory
 from app.services.ai_client import get_openai_client
 from app.services.interaction_store import interaction_store
+from app.services.smart_cart_guardrails import validate_smart_cart_output
 from app.services.product_catalog import catalog
 from app.services.session_store import session_store
 CART_PROMPT = """Analyze the customer's cart and suggest:
@@ -73,6 +74,10 @@ def _resolve_user_id(session_id: str, user_id: str | None = None) -> str | None:
 def _load_profile(session_id: str, user_id: str | None = None) -> dict[str, Any]:
     resolved = _resolve_user_id(session_id, user_id)
     if not resolved:
+        return {}
+    customer_id = session_store.get_customer_id(session_id)
+    expected = f"recommendation:{resolved}"
+    if customer_id and customer_id != expected:
         return {}
     return interaction_store.profile(resolved)
 
@@ -343,7 +348,7 @@ def get_smart_cart(session_id: str, user_id: str | None = None) -> dict[str, Any
     elif not cart:
         nudge = "Add items to your cart to see bundle savings and checkout tips."
 
-    return {
+    result = {
         "cart": cart,
         "bundles": bundles,
         "cross_sell_suggestions": cross_sell,
@@ -355,6 +360,7 @@ def get_smart_cart(session_id: str, user_id: str | None = None) -> dict[str, Any
         "total": total,
         "estimated_savings": discount,
     }
+    return validate_smart_cart_output(result)
 
 
 # Kept for orchestrator import compatibility

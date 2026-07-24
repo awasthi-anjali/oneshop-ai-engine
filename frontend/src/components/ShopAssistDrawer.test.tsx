@@ -425,7 +425,7 @@ describe('ShopAssistDrawer', () => {
     expect(container.querySelector('.proposal-card li')).not.toBeInTheDocument()
     expect(screen.getByText('Due once: $699.00')).toBeInTheDocument()
     expect(screen.getByText('Monthly: $85.00/month')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Confirm and add exact bundle' }))
+    await user.click(screen.getByRole('button', { name: 'Allow & add bundle' }))
     expect(onConfirmProposal).toHaveBeenCalledOnce()
     expect(onConfirmProposal).toHaveBeenCalledWith(cartProposal.proposal_id)
   })
@@ -446,7 +446,7 @@ describe('ShopAssistDrawer', () => {
     )
 
     expect(screen.getByText(/already in your cart will not be added twice/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Confirm and add exact item' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Allow & add item' })).toBeInTheDocument()
   })
 
   it('removes a consumed proposal instead of leaving it below the next response', () => {
@@ -538,7 +538,7 @@ describe('ShopAssistDrawer', () => {
     )
 
     expect(screen.getByText(/proposal is stale or incomplete/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Confirm and add exact bundle' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Allow & add bundle' })).not.toBeInTheDocument()
     await user.keyboard('{Escape}')
     expect(onClose).toHaveBeenCalledOnce()
   })
