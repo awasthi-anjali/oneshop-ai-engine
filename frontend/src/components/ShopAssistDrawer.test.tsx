@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type {
+  CartProposal,
   ChatAction,
   Product,
   ShoppingNeed,
@@ -42,6 +43,14 @@ const plan: Product = {
   tags: ['international'],
   currency: 'USD',
   billing_period: 'monthly',
+}
+
+const alternativePhone: Product = {
+  ...phone,
+  id: 'oneplus-12',
+  name: 'OnePlus 12',
+  brand: 'OnePlus',
+  price: 799,
 }
 
 const recommendations: ShopAssistRecommendation[] = [
@@ -89,8 +98,11 @@ function baseProps(overrides: Partial<ComponentProps<typeof ShopAssistDrawer>> =
     context: null,
     contextProduct: null,
     recommendations,
+    recommendationMode: 'request' as const,
+    recommendationHeading: 'ShopAssist recommends',
     comparison: [],
     actions: [],
+    cartProposal: null,
     confirming: false,
     confirmed: false,
     onClose: vi.fn(),
@@ -100,12 +112,179 @@ function baseProps(overrides: Partial<ComponentProps<typeof ShopAssistDrawer>> =
     onRemoveContext: vi.fn(),
     onRemoveNeed: vi.fn(),
     onAction: vi.fn(),
-    onConfirmBundle: vi.fn(),
+    onConfirmProposal: vi.fn(),
+    onViewPicks: vi.fn(),
     ...overrides,
   }
 }
 
+const cartProposal: CartProposal = {
+  proposal_id: 'proposal_1234567890',
+  products: [phone, plan],
+  product_ids: [phone.id, plan.id],
+  excluded_product_ids: [],
+  one_time_total: 699,
+  monthly_total: 85,
+}
+
 describe('ShopAssistDrawer', () => {
+  it('renders compact request pills, expands the best match, and requires explicit shop handoff', async () => {
+    const user = userEvent.setup()
+    const onViewPicks = vi.fn()
+
+    render(<ShopAssistDrawer {...baseProps({ onViewPicks })} />)
+
+    expect(screen.getByRole('heading', { name: 'ShopAssist recommends' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Best match: Google Pixel 8/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Plan: Unlimited Plus Plan/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByText('Catalog camera match.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'View in shop' }))
+    expect(onViewPicks).toHaveBeenCalledOnce()
+  })
+
+  it('shows collapsed profile recommendation pills as soon as the drawer opens', async () => {
+    const user = userEvent.setup()
+    render(
+      <ShopAssistDrawer
+        {...baseProps({
+          messages: [],
+          recommendationMode: 'profile',
+          recommendationHeading: 'Recommended for Alex',
+        })}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Recommended for Alex' })).toBeInTheDocument()
+    const topPick = screen.getByRole('button', { name: /Top pick: Google Pixel 8/ })
+    expect(topPick).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByText('Catalog camera match.')).not.toBeInTheDocument()
+    topPick.focus()
+    await user.keyboard('{Enter}')
+    expect(topPick).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Catalog camera match.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View For You' })).toBeInTheDocument()
+  })
+
+  it('uses direct quick replies and a grounded AI disclosure', async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    render(
+      <ShopAssistDrawer
+        {...baseProps({
+          messages: [{ role: 'assistant', content: 'Hi! Tell me what you need.' }],
+          status: 'clarifying',
+          need: {
+            ...need,
+            categories: [],
+            use_cases: [],
+            device_budget_max: null,
+            monthly_budget_max: null,
+          },
+          recommendations: [],
+          onSend,
+        })}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Find a phone' }))
+    expect(onSend).toHaveBeenCalledWith('Help me find a phone for my needs.')
+    expect(screen.getByText(/AI-guided answers can be inaccurate/i)).toBeInTheDocument()
+    expect(screen.getByText(/prices, and cart changes are validated by OneShop/i)).toBeInTheDocument()
+  })
+
+  it('offers concise budget replies for a phone-and-plan clarification', async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    render(
+      <ShopAssistDrawer
+        {...baseProps({
+          messages: [{ role: 'assistant', content: 'What are your budgets?' }],
+          status: 'clarifying',
+          recommendations: [],
+          need: { ...need, device_budget_max: null, monthly_budget_max: null },
+          onSend,
+        })}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: '$500 phone + $60 plan' }))
+    expect(onSend).toHaveBeenCalledWith(
+      'Android phone under $500 and plan under $60 per month.',
+    )
+  })
+
+  it('removes welcome picks after chat starts and hides stale request picks during the next turn', () => {
+    const { rerender } = render(
+      <ShopAssistDrawer
+        {...baseProps({
+          messages: [],
+          recommendationMode: 'profile',
+          recommendationHeading: 'Recommended for Alex',
+        })}
+      />,
+    )
+    expect(screen.getByRole('heading', { name: 'Recommended for Alex' })).toBeInTheDocument()
+
+    rerender(
+      <ShopAssistDrawer
+        {...baseProps({
+          messages: [{ role: 'user', content: 'Help me choose a phone' }],
+          recommendationMode: 'profile',
+          recommendationHeading: 'Recommended for Alex',
+          loading: true,
+        })}
+      />,
+    )
+    expect(screen.queryByRole('heading', { name: 'Recommended for Alex' })).not.toBeInTheDocument()
+
+    rerender(
+      <ShopAssistDrawer
+        {...baseProps({
+          messages: [{ role: 'user', content: 'Show me something cheaper' }],
+          recommendationMode: 'request',
+          recommendationHeading: 'ShopAssist recommends',
+          loading: true,
+        })}
+      />,
+    )
+    expect(screen.queryByRole('heading', { name: 'ShopAssist recommends' })).not.toBeInTheDocument()
+  })
+
+  it('uses one compact header and hides demo or generic catalog context rows', () => {
+    const { rerender } = render(
+      <ShopAssistDrawer
+        {...baseProps({
+          context: {
+            surface: 'catalog',
+            entry_point: 'help_me_choose',
+            visible_product_ids: [phone.id],
+          },
+        })}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'ShopAssist' })).toBeInTheDocument()
+    expect(screen.getByText('Catalog mode')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Close ShopAssist' })).toHaveLength(1)
+    expect(screen.queryByText(/synthetic demo data/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Context: catalog')).not.toBeInTheDocument()
+
+    rerender(
+      <ShopAssistDrawer
+        {...baseProps({
+          context: {
+            surface: 'product',
+            entry_point: 'product_detail',
+            product_id: phone.id,
+          },
+          contextProduct: phone,
+        })}
+      />,
+    )
+    expect(screen.getByText('Helping with Google Pixel 8')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove context: Helping with Google Pixel 8' })).toBeInTheDocument()
+  })
+
   it('keeps conversation and draft state when closed and reopened', async () => {
     const user = userEvent.setup()
 
@@ -157,18 +336,115 @@ describe('ShopAssistDrawer', () => {
 
   it('shows exact cadence and totals and submits only validated proposal IDs', async () => {
     const user = userEvent.setup()
-    const onConfirmBundle = vi.fn()
-    render(
+    const onConfirmProposal = vi.fn()
+    const { container } = render(
       <ShopAssistDrawer
-        {...baseProps({ actions: [proposal], onConfirmBundle })}
+        {...baseProps({ actions: [proposal], cartProposal, onConfirmProposal })}
       />
     )
 
+    expect(container.querySelectorAll('.proposal-item-pill')).toHaveLength(2)
+    expect(container.querySelector('.proposal-card li')).not.toBeInTheDocument()
     expect(screen.getByText('Due once: $699.00')).toBeInTheDocument()
     expect(screen.getByText('Monthly: $85.00/month')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Confirm and add exact bundle' }))
-    expect(onConfirmBundle).toHaveBeenCalledOnce()
-    expect(onConfirmBundle).toHaveBeenCalledWith([phone.id, plan.id])
+    expect(onConfirmProposal).toHaveBeenCalledOnce()
+    expect(onConfirmProposal).toHaveBeenCalledWith(cartProposal.proposal_id)
+  })
+
+  it('shows trusted duplicate exclusions and distinguishes single-item confirmation', () => {
+    render(
+      <ShopAssistDrawer
+        {...baseProps({
+          cartProposal: {
+            ...cartProposal,
+            products: [phone],
+            product_ids: [phone.id],
+            excluded_product_ids: [phone.id],
+            monthly_total: 0,
+          },
+        })}
+      />,
+    )
+
+    expect(screen.getByText(/already in your cart will not be added twice/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm and add exact item' })).toBeInTheDocument()
+  })
+
+  it('removes a consumed proposal instead of leaving it below the next response', () => {
+    const { rerender } = render(
+      <ShopAssistDrawer
+        {...baseProps({ cartProposal })}
+      />,
+    )
+    expect(screen.getByRole('region', { name: 'Cart proposal' })).toBeInTheDocument()
+
+    rerender(
+      <ShopAssistDrawer
+        {...baseProps({
+          cartProposal: null,
+          confirmed: true,
+          messages: [
+            { role: 'assistant', content: 'Added Google Pixel 8 to your cart.' },
+            { role: 'user', content: "What's in my cart?" },
+          ],
+          loading: true,
+        })}
+      />,
+    )
+
+    expect(screen.queryByRole('region', { name: 'Cart proposal' })).not.toBeInTheDocument()
+    expect(screen.getByText('Added Google Pixel 8 to your cart.')).toBeInTheDocument()
+  })
+
+  it('suppresses generated actions already represented by the compact recommendation controls', () => {
+    render(
+      <ShopAssistDrawer
+        {...baseProps({
+          actions: [
+            { type: 'OPEN_PRODUCT', label: 'Open Pixel duplicate', product_ids: [phone.id] },
+            { type: 'COMPARE', label: 'Compare duplicate', product_ids: [phone.id] },
+            { type: 'REFINE', label: 'Refine duplicate', product_ids: [] },
+            { type: 'HANDOFF_SERVICE', label: 'Specialist handoff available', product_ids: [] },
+          ],
+        })}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Open Pixel duplicate' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Compare duplicate' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Refine duplicate' })).not.toBeInTheDocument()
+    expect(screen.getByText('Specialist handoff available')).toBeInTheDocument()
+  })
+
+  it('offers comparison only when the trusted backend action allows it', () => {
+    const twoPhones: ShopAssistRecommendation[] = [
+      recommendations[0],
+      {
+        product: alternativePhone,
+        slot: 'alternative_phone',
+        reason_codes: [],
+        reason: 'Catalog alternative.',
+      },
+    ]
+    const { rerender } = render(
+      <ShopAssistDrawer {...baseProps({ recommendations: twoPhones })} />,
+    )
+    expect(screen.queryByRole('button', { name: 'Compare phones' })).not.toBeInTheDocument()
+
+    rerender(
+      <ShopAssistDrawer
+        {...baseProps({
+          recommendations: twoPhones,
+          actions: [{
+            type: 'COMPARE',
+            label: 'Compare recommended phones',
+            product_ids: [phone.id, alternativePhone.id],
+          }],
+        })}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Compare phones' })).toBeInTheDocument()
   })
 
   it('fails closed for stale proposal IDs and closes with Escape', async () => {
@@ -177,7 +453,7 @@ describe('ShopAssistDrawer', () => {
     render(
       <ShopAssistDrawer
         {...baseProps({
-          actions: [{ ...proposal, product_ids: [phone.id, 'stale-plan'] }],
+          cartProposal: { ...cartProposal, product_ids: [phone.id, 'stale-plan'] },
           onClose,
         })}
       />

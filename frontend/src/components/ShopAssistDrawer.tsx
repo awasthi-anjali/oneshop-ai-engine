@@ -1,6 +1,7 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type {
   ChatAction,
+  CartProposal,
   ChatMessage,
   ChatStatus,
   PageContext,
@@ -24,8 +25,11 @@ interface Props {
   context: PageContext | null
   contextProduct: Product | null
   recommendations: ShopAssistRecommendation[]
+  recommendationMode: 'profile' | 'request'
+  recommendationHeading: string
   comparison: Product[]
   actions: ChatAction[]
+  cartProposal: CartProposal | null
   confirming: boolean
   confirmed: boolean
   onClose: () => void
@@ -35,13 +39,19 @@ interface Props {
   onRemoveContext: () => void
   onRemoveNeed: (key: keyof ShoppingNeed, value?: string) => void
   onAction: (action: ChatAction) => void
-  onConfirmBundle: (productIds: string[]) => void
+  onConfirmProposal: (proposalId: string) => void
+  onViewPicks: () => void
 }
 
 const STARTERS = [
   { label: 'Find a phone', text: 'Help me find a phone for my needs.' },
   { label: 'Choose a plan', text: 'Help me choose a mobile plan.' },
   { label: 'Build phone + plan', text: 'Help me build a phone and plan bundle.' },
+]
+
+const BUDGET_REPLIES = [
+  { label: '$500 phone + $60 plan', text: 'Android phone under $500 and plan under $60 per month.' },
+  { label: '$800 phone + $90 plan', text: 'Android phone under $800 and plan under $90 per month.' },
 ]
 
 function price(product: Product) {
@@ -76,6 +86,13 @@ function needChips(need: ShoppingNeed) {
   return chips
 }
 
+function recommendationLabel(recommendation: ShopAssistRecommendation, index: number, mode: 'profile' | 'request') {
+  if (mode === 'profile') return index === 0 ? 'Top pick' : 'For you'
+  if (recommendation.slot === 'primary_phone') return 'Best match'
+  if (recommendation.slot === 'alternative_phone') return 'Alternative'
+  return 'Plan'
+}
+
 export default function ShopAssistDrawer({
   open,
   messages,
@@ -88,8 +105,11 @@ export default function ShopAssistDrawer({
   context,
   contextProduct,
   recommendations,
+  recommendationMode,
+  recommendationHeading,
   comparison,
   actions,
+  cartProposal,
   confirming,
   confirmed,
   onClose,
@@ -99,10 +119,13 @@ export default function ShopAssistDrawer({
   onRemoveContext,
   onRemoveNeed,
   onAction,
-  onConfirmBundle,
+  onConfirmProposal,
+  onViewPicks,
 }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const recommendationsRef = useRef<HTMLElement>(null)
+  const [selectedRecommendationId, setSelectedRecommendationId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -123,6 +146,15 @@ export default function ShopAssistDrawer({
     if (open) bottomRef.current?.scrollIntoView({ block: 'nearest' })
   }, [messages, loading, open])
 
+  useEffect(() => {
+    setSelectedRecommendationId(
+      recommendationMode === 'request' ? recommendations[0]?.product.id ?? null : null,
+    )
+    if (open && recommendationMode === 'request' && recommendations.length > 0) {
+      recommendationsRef.current?.scrollIntoView({ block: 'start' })
+    }
+  }, [open, recommendationMode, recommendations])
+
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -130,19 +162,50 @@ export default function ShopAssistDrawer({
     }
   }
 
-  const proposal = actions.find((action) => action.type === 'PROPOSE_ADD_BUNDLE')
-  const proposalProducts = proposal
-    ? proposal.product_ids
-        .map((id) => recommendations.find((item) => item.product.id === id)?.product)
-        .filter((product): product is Product => Boolean(product))
-    : []
-  const oneTimeTotal = proposalProducts
-    .filter((product) => product.billing_period !== 'monthly' && product.category !== 'plan')
-    .reduce((sum, product) => sum + product.price, 0)
-  const monthlyTotal = proposalProducts
-    .filter((product) => product.billing_period === 'monthly' || product.category === 'plan')
-    .reduce((sum, product) => sum + product.price, 0)
+  const proposalProducts = cartProposal?.products ?? []
+  const proposalIsComplete = Boolean(
+    cartProposal
+    && proposalProducts.length === cartProposal.product_ids.length
+    && proposalProducts.every((product, index) => product.id === cartProposal.product_ids[index]),
+  )
   const chips = needChips(need)
+  const comparisonIds = recommendations
+    .filter((recommendation) => recommendation.product.category === 'phone')
+    .map((recommendation) => recommendation.product.id)
+    .slice(0, 2)
+  const comparisonOffered = actions.some((action) => action.type === 'COMPARE')
+  const selectedRecommendation = recommendations.find(
+    (recommendation) => recommendation.product.id === selectedRecommendationId,
+  )
+  const selectedRecommendationIndex = selectedRecommendation
+    ? recommendations.indexOf(selectedRecommendation)
+    : -1
+  const contextLabel = contextProduct
+    ? `Helping with ${contextProduct.name}`
+    : context?.surface === 'cart' || context?.entry_point === 'cart'
+      ? 'Using your cart'
+      : context?.entry_point === 'next_best_action'
+        ? 'From next best action'
+        : null
+  const supplementalActions = actions.filter(
+    (action) => action.type === 'HANDOFF_SERVICE',
+  )
+  const latestMessage = messages[messages.length - 1]
+  const showRecommendations = recommendations.length > 0 && (
+    recommendationMode === 'profile'
+      ? messages.length === 0
+      : latestMessage?.role === 'assistant' && !loading
+  )
+  const waitingForBundleBudgets = (
+    status === 'clarifying'
+    && need.categories.includes('phone')
+    && need.categories.includes('plan')
+    && need.device_budget_max == null
+    && need.monthly_budget_max == null
+  )
+  const quickReplies = status === 'clarifying' && latestMessage?.role === 'assistant' && !loading
+    ? waitingForBundleBudgets ? BUDGET_REPLIES : STARTERS
+    : []
 
   return (
     <aside
@@ -151,58 +214,55 @@ export default function ShopAssistDrawer({
       aria-label="ShopAssist purchase guide"
     >
       <header className="shopassist-header">
-        <div>
-          <div className="shopassist-title-row">
-            <h2>ShopAssist</h2>
-            {mode && <span className={`assist-mode ${mode}`}>{mode === 'ai' ? 'AI guided' : 'Safe fallback'}</span>}
-          </div>
-          <p>Phone and plan guidance from this demo catalog</p>
+        <div className="shopassist-title-row">
+          <h2>ShopAssist</h2>
+          {mode && (
+            <span className={`assist-mode ${mode}`}>
+              {mode === 'ai' ? 'AI guided' : 'Catalog mode'}
+            </span>
+          )}
         </div>
         <button className="assist-close" onClick={onClose} aria-label="Close ShopAssist">
           ×
         </button>
       </header>
 
-      <div className="demo-notice" role="note">
-        Product, stock, and plan information shown here is synthetic demo data.
-      </div>
-
-      {context && (
-        <div className="assist-context">
-          <span>Context: {contextProduct?.name ?? context.surface}</span>
-          <button onClick={onRemoveContext} aria-label="Remove product context">×</button>
-        </div>
-      )}
-
-      {chips.length > 0 && (
-        <section className="need-profile" aria-label="Understood shopping need">
-          <div className="need-heading">
-            <h3>Your need</h3>
-            <span>Remove a chip to draft a refinement</span>
-          </div>
-          <div className="need-chips">
-            {chips.map((chip) => (
-              <button
-                key={`${chip.key}-${chip.value ?? chip.label}`}
-                className="need-chip"
-                onClick={() => onRemoveNeed(chip.key, chip.value)}
-                aria-label={`Remove ${chip.label}`}
-              >
-                {chip.label} <span aria-hidden="true">×</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
       <div className="assist-messages" aria-live="polite">
+        {contextLabel && (
+          <div className="assist-context">
+            <span>{contextLabel}</span>
+            <button onClick={onRemoveContext} aria-label={`Remove context: ${contextLabel}`}>×</button>
+          </div>
+        )}
+
+        {chips.length > 0 && (
+          <section className="need-profile" aria-label="Understood shopping need">
+            <div className="need-heading">
+              <h3>Your need</h3>
+              <span>Remove a chip to refine</span>
+            </div>
+            <div className="need-chips">
+              {chips.map((chip) => (
+                <button
+                  key={`${chip.key}-${chip.value ?? chip.label}`}
+                  className="need-chip"
+                  onClick={() => onRemoveNeed(chip.key, chip.value)}
+                  aria-label={`Remove ${chip.label}`}
+                >
+                  {chip.label} <span aria-hidden="true">×</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
         {messages.length === 0 ? (
           <section className="assist-welcome">
             <h3>What would you like to choose?</h3>
-            <p>I can narrow the demo catalog, explain trade-offs, and prepare an exact cart proposal for you to confirm.</p>
+            <p>I can narrow the catalog, explain trade-offs, and prepare an exact cart proposal for you to confirm.</p>
             <div className="assist-starters">
               {STARTERS.map((starter) => (
-                <button key={starter.label} onClick={() => onDraftChange(starter.text)}>
+                <button key={starter.label} onClick={() => onSend(starter.text)}>
                   {starter.label}
                 </button>
               ))}
@@ -214,37 +274,170 @@ export default function ShopAssistDrawer({
           ))
         )}
 
+        {quickReplies.length > 0 && (
+          <div className="assist-quick-replies" aria-label="Quick replies">
+            {quickReplies.map((reply) => (
+              <button
+                type="button"
+                key={reply.label}
+                onClick={() => onSend(reply.text)}
+              >
+                {reply.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {showRecommendations && (
+          <section
+            ref={recommendationsRef}
+            className="assist-recommendations"
+            aria-labelledby="assist-recommendations-heading"
+          >
+            <div className="assist-recommendations-heading">
+              <div>
+                <span>
+                  {recommendationMode === 'profile' ? 'Based on your profile' : 'Catalog-validated matches'}
+                </span>
+                <h3 id="assist-recommendations-heading">{recommendationHeading}</h3>
+              </div>
+              <button type="button" onClick={onViewPicks}>
+                {recommendationMode === 'profile' ? 'View For You' : 'View in shop'}
+              </button>
+            </div>
+            <div className="assist-recommendation-pills" aria-label="Recommended products">
+              {recommendations.map((recommendation, index) => (
+                <button
+                  type="button"
+                  className={`assist-recommendation-pill ${
+                    selectedRecommendationId === recommendation.product.id ? 'selected' : ''
+                  }`}
+                  key={`${recommendation.slot}-${recommendation.product.id}`}
+                  aria-pressed={selectedRecommendationId === recommendation.product.id}
+                  aria-label={`${recommendationLabel(recommendation, index, recommendationMode)}: ${recommendation.product.name}, ${price(recommendation.product)}`}
+                  onClick={() => {
+                    setSelectedRecommendationId((current) =>
+                      current === recommendation.product.id ? null : recommendation.product.id,
+                    )
+                  }}
+                >
+                  <img src={recommendation.product.image_url} alt="" />
+                  <span>
+                    <small>{recommendationLabel(recommendation, index, recommendationMode)}</small>
+                    <strong>{recommendation.product.name}</strong>
+                    <em>{price(recommendation.product)}</em>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {selectedRecommendation && (
+              <article className="assist-recommendation-preview" aria-live="polite">
+                <div className="assist-preview-heading">
+                  <span>
+                    {recommendationLabel(
+                      selectedRecommendation,
+                      selectedRecommendationIndex,
+                      recommendationMode,
+                    )}
+                  </span>
+                  <strong>{selectedRecommendation.product.name}</strong>
+                  <em>{price(selectedRecommendation.product)}</em>
+                </div>
+                <p>{selectedRecommendation.reason.split(';')[0].trim()}</p>
+                {selectedRecommendation.reason_codes.length > 0 && (
+                  <div className="assist-reason-badges" aria-label="Matched constraints">
+                    {selectedRecommendation.reason_codes.slice(0, 2).map((code) => (
+                      <span key={code}>{code.replace(/_/g, ' ').toLowerCase()}</span>
+                    ))}
+                  </div>
+                )}
+                <div className="assist-preview-actions">
+                  <button
+                    type="button"
+                    onClick={() => onAction({
+                      type: 'OPEN_PRODUCT',
+                      label: `Open ${selectedRecommendation.product.name}`,
+                      product_ids: [selectedRecommendation.product.id],
+                    })}
+                  >
+                    Open product
+                  </button>
+                  {comparisonIds.length === 2 && comparisonOffered && (
+                    <button
+                      type="button"
+                      onClick={() => onAction({
+                        type: 'COMPARE',
+                        label: 'Compare recommended phones',
+                        product_ids: comparisonIds,
+                      })}
+                    >
+                      Compare phones
+                    </button>
+                  )}
+                </div>
+              </article>
+            )}
+
+            {recommendationMode === 'request' && (
+              <div className="assist-recommendation-actions">
+                <button
+                  type="button"
+                  onClick={() => onDraftChange('Refine these recommendations: ')}
+                >
+                  Refine results
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
         {comparison.length === 2 && (
           <section className="drawer-comparison" aria-label="Phone comparison">
             <ComparisonTable products={comparison} />
           </section>
         )}
 
-        {proposal && (
+        {cartProposal && (
           <section className="proposal-card" aria-label="Cart proposal">
             <span className="proposal-eyebrow">Review exact proposal</span>
-            <h3>{proposal.label}</h3>
-            {proposalProducts.length === proposal.product_ids.length ? (
+            <h3>{proposalProducts.map((product) => product.name).join(' + ')}</h3>
+            {proposalIsComplete ? (
               <>
-                <ul>
+                <div className="proposal-items">
                   {proposalProducts.map((product) => (
-                    <li key={product.id}>
-                      <span>{product.name}</span>
-                      <strong>{price(product)}</strong>
-                    </li>
+                    <span className="proposal-item-pill" key={product.id}>
+                      <img src={product.image_url} alt="" />
+                      <span>
+                        <strong>{product.name}</strong>
+                        <small>{price(product)}</small>
+                      </span>
+                    </span>
                   ))}
-                </ul>
-                <div className="proposal-totals">
-                  {oneTimeTotal > 0 && <span>Due once: ${oneTimeTotal.toFixed(2)}</span>}
-                  {monthlyTotal > 0 && <span>Monthly: ${monthlyTotal.toFixed(2)}/month</span>}
                 </div>
+                <div className="proposal-totals">
+                  {cartProposal.one_time_total > 0 && <span>Due once: ${cartProposal.one_time_total.toFixed(2)}</span>}
+                  {cartProposal.monthly_total > 0 && <span>Monthly: ${cartProposal.monthly_total.toFixed(2)}/month</span>}
+                </div>
+                {cartProposal.excluded_product_ids.length > 0 && (
+                  <p>
+                    {cartProposal.excluded_product_ids.length} item
+                    {cartProposal.excluded_product_ids.length === 1 ? '' : 's'} already in your cart will not be added twice.
+                  </p>
+                )}
                 <p>Nothing changes in your cart until you confirm.</p>
                 <button
                   className="confirm-proposal"
-                  onClick={() => onConfirmBundle(proposal.product_ids)}
+                  onClick={() => onConfirmProposal(cartProposal.proposal_id)}
                   disabled={confirming || confirmed}
                 >
-                  {confirming ? 'Adding…' : confirmed ? 'Added to cart' : 'Confirm and add exact bundle'}
+                  {confirming
+                    ? 'Adding…'
+                    : confirmed
+                      ? 'Added to cart'
+                      : proposalProducts.length === 1
+                        ? 'Confirm and add exact item'
+                        : 'Confirm and add exact bundle'}
                 </button>
               </>
             ) : (
@@ -253,21 +446,13 @@ export default function ShopAssistDrawer({
           </section>
         )}
 
-        {actions.filter((action) => action !== proposal).length > 0 && (
+        {supplementalActions.length > 0 && (
           <div className="assist-actions" aria-label="ShopAssist actions">
-            {actions
-              .filter((action) => action !== proposal)
-              .map((action) =>
-                action.type === 'HANDOFF_SERVICE' ? (
-                  <span className="assist-handoff" key={`${action.type}-${action.label}`}>
-                    {action.label}
-                  </span>
-                ) : (
-                  <button key={`${action.type}-${action.label}`} onClick={() => onAction(action)}>
-                    {action.label}
-                  </button>
-                )
-              )}
+            {supplementalActions.map((action) => (
+              <span className="assist-handoff" key={`${action.type}-${action.label}`}>
+                {action.label}
+              </span>
+            ))}
           </div>
         )}
 
@@ -308,6 +493,9 @@ export default function ShopAssistDrawer({
           </button>
         </div>
         <span className="composer-help">Enter to send · Shift+Enter for a new line</span>
+        <p className="assist-disclosure">
+          AI-guided answers can be inaccurate. Product facts, prices, and cart changes are validated by OneShop.
+        </p>
       </footer>
     </aside>
   )

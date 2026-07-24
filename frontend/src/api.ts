@@ -50,6 +50,8 @@ export type ChatActionType =
   | 'REFINE'
   | 'COMPARE'
   | 'OPEN_PRODUCT'
+  | 'VIEW_CART'
+  | 'PROPOSE_ADD_TO_CART'
   | 'PROPOSE_ADD_BUNDLE'
   | 'HANDOFF_SERVICE'
 
@@ -57,6 +59,32 @@ export interface ChatAction {
   type: ChatActionType
   label: string
   product_ids: string[]
+  proposal_id?: string | null
+}
+
+export interface CartSummary {
+  items: Product[]
+  total_items: number
+  one_time_total: number
+  monthly_total: number
+}
+
+export interface CartProposal {
+  proposal_id: string
+  products: Product[]
+  product_ids: string[]
+  excluded_product_ids: string[]
+  one_time_total: number
+  monthly_total: number
+}
+
+export interface CartConfirmationResponse {
+  session_id: string
+  proposal_id: string
+  added_product_ids: string[]
+  excluded_product_ids: string[]
+  idempotent_replay: boolean
+  cart_summary: CartSummary
 }
 
 export interface ShopAssistRecommendation {
@@ -85,6 +113,9 @@ export interface ChatResponse {
   suggested_actions: string[]
   cart_updated: false
   open_checkout: false
+  selected_tool?: string | null
+  cart_summary?: CartSummary | null
+  cart_proposal?: CartProposal | null
 }
 
 interface LegacyChatResponse {
@@ -119,6 +150,9 @@ interface WireV1ChatResponse {
   suggested_actions?: string[]
   cart_updated: boolean
   open_checkout: boolean
+  selected_tool?: string | null
+  cart_summary?: CartSummary | null
+  cart_proposal?: CartProposal | null
 }
 
 export interface CustomerIntent {
@@ -139,6 +173,71 @@ export interface RecommendationItem {
   score: number
   reason: string
   source?: 'ai' | 'semantic_backup' | 'rules'
+}
+
+export interface PersonalizedScoreBreakdown {
+  [component: string]: number
+}
+
+export interface PersonalizedProfile {
+  user_id: string
+  brand_affinity: Record<string, number>
+  category_affinity: Record<string, number>
+  price_centroid: number | null
+  recent_views: string[]
+  cart_products: string[]
+  wishlist_products: string[]
+  channels_used: string[]
+  last_active_channel: string | null
+  interaction_counts: Record<string, number>
+  total_interactions: number
+  cold_start?: boolean
+}
+
+export interface PersonalizedRecommendation {
+  product: Product
+  score: number
+  explanation: string
+  reason_codes: string[]
+  score_breakdown: PersonalizedScoreBreakdown
+}
+
+export interface PersonalizedRecommendationsResponse {
+  user_id: string
+  session_id?: string
+  channel: Channel
+  context: string
+  profile_version: number | string
+  profile: PersonalizedProfile
+  recommendations: PersonalizedRecommendation[]
+}
+
+export type InteractionEventType =
+  | 'product_view'
+  | 'wishlist_add'
+  | 'wishlist_remove'
+  | 'cart_add'
+  | 'cart_remove'
+  | 'impression'
+  | 'rec_click'
+
+export interface RecommendationEventMetadata {
+  query?: string
+  intent?: string
+  rec_position?: number
+  rec_type?: string
+  surface?: string
+  visible?: boolean
+}
+
+export interface InteractionEvent {
+  event_id: string
+  user_id: string
+  event_type: InteractionEventType
+  product_id?: string
+  channel: Channel
+  session_id: string | null
+  metadata: RecommendationEventMetadata
 }
 
 export interface RecommendationsResponse {
@@ -260,8 +359,43 @@ const SESSION_KEY = 'oneshop_session_id'
 const CHANNEL_KEY = 'oneshop_channel'
 const SYNC_TICK_KEY = 'oneshop_sync_tick'
 const SYNC_BC = 'oneshop-omni-sync'
+const PERSONALIZATION_USER_KEY = 'oneshop_personalization_user'
+const PERSONALIZATION_EVENT = 'oneshop-personalization-user'
 
 export type Channel = 'oneshop' | 'oneapp'
+
+export const DEMO_USERS = [
+  { id: 'user_001', name: 'Alex', description: 'Budget student', emoji: '🎓' },
+  { id: 'user_011', name: 'Dev', description: 'Tech enthusiast', emoji: '🚀' },
+  { id: 'user_021', name: 'Morgan', description: 'Business pro', emoji: '💼' },
+  { id: 'user_031', name: 'Greta', description: 'Senior', emoji: '🌿' },
+  { id: 'user_041', name: 'Chris', description: 'Family parent', emoji: '👨‍👩‍👧' },
+] as const
+
+export function getPersonalizationUserId(): string {
+  const stored = localStorage.getItem(PERSONALIZATION_USER_KEY)
+  return DEMO_USERS.some((user) => user.id === stored) ? stored! : DEMO_USERS[0].id
+}
+
+export function setPersonalizationUserId(userId: string) {
+  if (!DEMO_USERS.some((user) => user.id === userId)) return
+  localStorage.setItem(PERSONALIZATION_USER_KEY, userId)
+  window.dispatchEvent(new CustomEvent(PERSONALIZATION_EVENT, { detail: userId }))
+  notifySessionSync()
+}
+
+export function onPersonalizationUserChange(callback: (userId: string) => void) {
+  const onCustom = (event: Event) => callback((event as CustomEvent<string>).detail)
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === PERSONALIZATION_USER_KEY && event.newValue) callback(event.newValue)
+  }
+  window.addEventListener(PERSONALIZATION_EVENT, onCustom)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    window.removeEventListener(PERSONALIZATION_EVENT, onCustom)
+    window.removeEventListener('storage', onStorage)
+  }
+}
 
 /** Create or reuse one session id before any API call (shared across tabs). */
 export function ensureSessionId(): string {
@@ -477,6 +611,38 @@ export async function addBundleToCart(
   return sessionMutation(res)
 }
 
+export async function confirmShopAssistCartProposal(
+  proposalId: string,
+  idempotencyKey: string,
+  sessionId: string,
+  userId: string,
+  channel: Channel = getChannel()
+): Promise<CartConfirmationResponse> {
+  const res = await fetch(`${API_BASE}/chat/cart/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      proposal_id: proposalId,
+      idempotency_key: idempotencyKey,
+      session_id: sessionId,
+      user_id: userId,
+      channel,
+    }),
+  })
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    throw new Error(
+      typeof detail?.detail === 'string'
+        ? detail.detail
+        : 'The cart proposal could not be confirmed.'
+    )
+  }
+  const data: CartConfirmationResponse = await res.json()
+  storeSessionId(data.session_id)
+  notifySessionSync()
+  return data
+}
+
 export async function completeCheckout(
   sessionId: string | null,
   customerName: string,
@@ -527,7 +693,14 @@ export async function sendMessage(
   message: string,
   sessionId: string | null,
   pageContext?: PageContext,
-  channel: Channel = getChannel()
+  channel: Channel = getChannel(),
+  userId: string = getPersonalizationUserId(),
+  personalizationContext?: {
+    preferred_brands: string[]
+    preferred_categories: string[]
+    price_centroid: number | null
+    interaction_count: number
+  }
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
@@ -536,6 +709,8 @@ export async function sendMessage(
       message,
       session_id: sessionId,
       channel,
+      user_id: userId,
+      personalization_context: personalizationContext,
       page_context: pageContext,
     }),
   })
@@ -564,6 +739,9 @@ export async function sendMessage(
       suggested_actions: raw.suggested_actions ?? [],
       cart_updated: false,
       open_checkout: false,
+      selected_tool: raw.selected_tool,
+      cart_summary: raw.cart_summary,
+      cart_proposal: raw.cart_proposal,
     }
     storeSessionId(data.session_id)
     return data
@@ -601,6 +779,122 @@ export async function sendMessage(
   }
   storeSessionId(data.session_id)
   return data
+}
+
+function normalizePersonalizedResponse(
+  raw: Partial<PersonalizedRecommendationsResponse>,
+  userId: string,
+  channel: Channel,
+  context: string
+): PersonalizedRecommendationsResponse {
+  const profile = raw.profile ?? ({} as PersonalizedProfile)
+  const priceSignal = (profile as unknown as {
+    price_signal?: { centroid?: number } | number
+  }).price_signal
+  return {
+    user_id: raw.user_id ?? userId,
+    session_id: raw.session_id,
+    channel: raw.channel ?? channel,
+    context: raw.context ?? context,
+    profile_version: raw.profile_version ?? (raw as unknown as { version?: number | string }).version ?? 0,
+    profile: {
+      user_id: profile.user_id ?? userId,
+      brand_affinity: profile.brand_affinity ?? {},
+      category_affinity: profile.category_affinity ?? {},
+      price_centroid:
+        profile.price_centroid ??
+        (typeof priceSignal === 'number' ? priceSignal : priceSignal?.centroid ?? null),
+      recent_views: profile.recent_views ?? [],
+      cart_products: profile.cart_products ?? (profile as unknown as { cart_exclusions?: string[] }).cart_exclusions ?? [],
+      wishlist_products: profile.wishlist_products ?? (profile as unknown as { wishlist_exclusions?: string[] }).wishlist_exclusions ?? [],
+      channels_used: profile.channels_used ?? (profile as unknown as { channels?: string[] }).channels ?? [],
+      last_active_channel: profile.last_active_channel ?? null,
+      interaction_counts: profile.interaction_counts ?? {},
+      total_interactions: profile.total_interactions ?? 0,
+      cold_start: profile.cold_start ?? false,
+    },
+    recommendations: (raw.recommendations ?? []).map((item) => ({
+      ...item,
+      score: Number(item.score ?? 0),
+      explanation: item.explanation || (item as unknown as { reason?: string }).reason || 'Ranked from recorded interactions.',
+      reason_codes: item.reason_codes ?? [],
+      score_breakdown: item.score_breakdown ?? {},
+    })),
+  }
+}
+
+export async function getPersonalizedRecommendations(
+  userId: string,
+  sessionId: string | null,
+  channel: Channel,
+  context = 'general',
+  topK = 6
+): Promise<PersonalizedRecommendationsResponse> {
+  const params = new URLSearchParams({ channel, query: context, limit: String(topK) })
+  if (sessionId) params.set('session_id', sessionId)
+  const res = await fetch(`${API_BASE}/recommendations/${encodeURIComponent(userId)}?${params}`)
+  if (!res.ok) throw new Error('Personalized recommendations are temporarily unavailable.')
+  return normalizePersonalizedResponse(await res.json(), userId, channel, context)
+}
+
+export function subscribeToPersonalizedRecommendations(
+  userId: string,
+  sessionId: string | null,
+  channel: Channel,
+  context: string,
+  topK: number,
+  onUpdate: (response: PersonalizedRecommendationsResponse) => void,
+  onError: () => void
+): () => void {
+  let stopped = false
+  let version: number | string = 0
+  let timer: number | undefined
+  const poll = async () => {
+    const params = new URLSearchParams({
+      channel,
+      query: context,
+      limit: String(topK),
+      after_version: String(version),
+    })
+    if (sessionId) params.set('session_id', sessionId)
+    try {
+      const res = await fetch(
+        `${API_BASE}/recommendations/${encodeURIComponent(userId)}/updates?${params}`
+      )
+      if (!res.ok) throw new Error('update unavailable')
+      if (res.status === 204) return
+      const raw = await res.json()
+      if (raw?.changed === false) {
+        version = raw.version ?? version
+        return
+      }
+      if (raw && raw.recommendations) {
+        const normalized = normalizePersonalizedResponse(raw, userId, channel, context)
+        version = normalized.profile_version
+        onUpdate(normalized)
+      }
+    } catch {
+      onError()
+    } finally {
+      if (!stopped) timer = window.setTimeout(poll, 2000)
+    }
+  }
+  void poll()
+  return () => {
+    stopped = true
+    if (timer !== undefined) window.clearTimeout(timer)
+  }
+}
+
+export async function trackInteraction(event: Omit<InteractionEvent, 'event_id'> & { event_id?: string }) {
+  const payload: InteractionEvent = { ...event, event_id: event.event_id ?? crypto.randomUUID() }
+  const res = await fetch(`${API_BASE}/recommendations/interactions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error('Interaction tracking failed')
+  return res.json() as Promise<{ status: string; event_id: string; profile_version?: number | string }>
 }
 
 export async function getHealth(): Promise<{ llm_enabled: boolean; mode: string }> {

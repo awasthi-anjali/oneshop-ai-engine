@@ -33,6 +33,7 @@ guide in the observed golden journeys. Remaining claims must stay narrow:
 | Embedded drawer; no separate tab | Verified | Browser inspection at 1440/1024/375; frontend renders OneShop continuously |
 | OneShop state retained while assistant opens | Verified | G15 live: six messages, draft, eight need chips, three picks, comparison/proposal, and context survived close/reopen |
 | Commerce-only boundary | Verified | G11, G12, and G17 deterministic tests |
+| Natural-language front door | Verified for tested attacks | Ambiguous turns can reach the bounded AI parser; deterministic fallback covers currency suffixes, budget paraphrases, typo/context continuity, and promotion synonyms without relaxing hard boundaries |
 | Structured shopping need | Verified | Multi-turn test and live editable chips |
 | Grounded phone-and-plan shortlist | Verified | G01-G09 assertions and live primary journey |
 | At most three recommendations | Verified | Response schema cap plus golden assertions |
@@ -42,7 +43,7 @@ guide in the observed golden journeys. Remaining claims must stay narrow:
 | One canonical prompt | Verified | Code inspection: one prompt module and one bounded parser call path |
 | Currency and billing cadence | Verified | Backend contract tests and live proposal totals (`$699` once, `$85/month`) |
 | Accessible responsive light theme | Partial | Three viewports, sampled AA token contrast, visible focus ring, no app overflow, mobile input visible; real software keyboard and simultaneous checkout layering not exercised |
-| Automated evaluation evidence | Verified | 28 backend tests and 4 frontend component tests pass |
+| Automated evaluation evidence | Verified | Final combined regression: 73 backend tests and 24 frontend tests pass; production build transforms 225 modules |
 | OneApp UI and production persistence | Missing | Explicitly deferred from V1 |
 
 ## Baseline verification
@@ -81,3 +82,21 @@ Golden status:
 
 Screenshot evidence is stored in `docs/shopassist/evidence/`, including the
 desktop proposal, 1024px drawer, 375px sheet, and product-modal layering.
+
+## Conversational-routing and Magenta-pattern follow-up
+
+Fresh evidence on 2026-07-24:
+
+- `python -m pytest -q` - exit 0; 73 tests passed in 11.04s.
+- `npm test -- --run` - exit 0; 5 files and 24 tests passed.
+- `npm run build` - exit 0; 225 modules transformed.
+- The reported `$300` typo/paraphrase returns an honest phone no-match instead
+  of `unsupported`.
+- Discount, deal, cashback, promotion, and rebate turns remain in scope but
+  never manufacture an offer.
+- Greetings and thanks no longer produce the generic unsupported response.
+- Additional prompt-injection paraphrases produce no recommendations, tools,
+  or cart mutation.
+- The live 375x812 drawer had no horizontal overflow and kept the composer
+  fully visible. It now uses direct quick replies, a branded assistant marker,
+  and a compact AI-accuracy disclosure without collecting identity or PII.

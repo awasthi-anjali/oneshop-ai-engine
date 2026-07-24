@@ -69,12 +69,31 @@ class PageContext(BaseModel):
     visible_product_ids: list[str] = Field(default_factory=list, max_length=20)
 
 
+class PersonalizationContext(BaseModel):
+    """Validated UI hint for contract compatibility; server-derived preferences remain authoritative."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    preferred_brands: list[str] = Field(default_factory=list, max_length=3)
+    preferred_categories: list[ProductCategory] = Field(default_factory=list, max_length=3)
+    price_centroid: float = Field(default=0, ge=0, le=100_000)
+    interaction_count: int = Field(default=0, ge=0, le=1_000_000)
+
+    @field_validator("preferred_brands")
+    @classmethod
+    def normalize_preferred_brands(cls, values: list[str]) -> list[str]:
+        normalized = [" ".join(value.strip().split())[:32] for value in values]
+        return [value for value in normalized if value]
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(..., min_length=1, max_length=1000)
     session_id: str | None = None
     channel: ChatChannel = ChatChannel.ONESHOP
+    user_id: str | None = Field(default=None, min_length=2, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    personalization_context: PersonalizationContext | None = None
     page_context: PageContext | None = None
 
     @field_validator("message")
@@ -143,6 +162,8 @@ class ShopAssistActionType(str, Enum):
     REFINE = "REFINE"
     COMPARE = "COMPARE"
     OPEN_PRODUCT = "OPEN_PRODUCT"
+    VIEW_CART = "VIEW_CART"
+    PROPOSE_ADD_TO_CART = "PROPOSE_ADD_TO_CART"
     PROPOSE_ADD_BUNDLE = "PROPOSE_ADD_BUNDLE"
     HANDOFF_SERVICE = "HANDOFF_SERVICE"
 
@@ -151,6 +172,23 @@ class ShopAssistAction(BaseModel):
     type: ShopAssistActionType
     label: str
     product_ids: list[str] = Field(default_factory=list)
+    proposal_id: str | None = None
+
+
+class CartSummary(BaseModel):
+    items: list[Product] = Field(default_factory=list)
+    total_items: int = 0
+    one_time_total: float = 0
+    monthly_total: float = 0
+
+
+class CartProposal(BaseModel):
+    proposal_id: str
+    products: list[Product] = Field(..., min_length=1, max_length=3)
+    product_ids: list[str] = Field(..., min_length=1, max_length=3)
+    excluded_product_ids: list[str] = Field(default_factory=list)
+    one_time_total: float = 0
+    monthly_total: float = 0
 
 
 class ChatStatus(str, Enum):
@@ -179,6 +217,28 @@ class ChatResponse(BaseModel):
     suggested_actions: list[str] = Field(default_factory=list)
     cart_updated: bool = False
     open_checkout: bool = False
+    selected_tool: str | None = None
+    cart_summary: CartSummary | None = None
+    cart_proposal: CartProposal | None = None
+
+
+class CartConfirmationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    proposal_id: str = Field(..., min_length=16, max_length=128)
+    idempotency_key: str = Field(..., min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    session_id: str = Field(..., min_length=1, max_length=128)
+    user_id: str | None = Field(default=None, min_length=2, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    channel: ChatChannel = ChatChannel.ONESHOP
+
+
+class CartConfirmationResponse(BaseModel):
+    session_id: str
+    proposal_id: str
+    added_product_ids: list[str] = Field(default_factory=list)
+    excluded_product_ids: list[str] = Field(default_factory=list)
+    idempotent_replay: bool = False
+    cart_summary: CartSummary
 
 
 class ProductSearchRequest(BaseModel):
@@ -361,3 +421,47 @@ class SessionActionRequest(BaseModel):
     session_id: str | None = None
     product_id: str
     channel: str | None = None
+
+
+class RecommendationEventType(str, Enum):
+    IMPRESSION = "impression"
+    REC_CLICK = "rec_click"
+    PRODUCT_VIEW = "product_view"
+    WISHLIST_ADD = "wishlist_add"
+    WISHLIST_REMOVE = "wishlist_remove"
+    CART_ADD = "cart_add"
+    CART_REMOVE = "cart_remove"
+    DISMISS = "dismiss"
+
+
+class RecommendationEventMetadata(BaseModel):
+    """Strict metadata allow-list: never persist raw chat, arbitrary payloads, or PII."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str | None = Field(default=None, max_length=120)
+    intent: str | None = Field(default=None, max_length=64)
+    rec_position: int | None = Field(default=None, ge=0, le=50)
+    rec_type: str | None = Field(default=None, max_length=32)
+    surface: str | None = Field(default=None, max_length=32)
+    visible: bool | None = None
+
+    @field_validator("query", "intent", "rec_type", "surface")
+    @classmethod
+    def normalize_metadata_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.strip().lower().split())
+        return normalized or None
+
+
+class RecommendationInteractionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(..., min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    user_id: str = Field(..., min_length=2, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    event_type: RecommendationEventType
+    product_id: str | None = None
+    channel: ChatChannel = ChatChannel.ONESHOP
+    session_id: str | None = Field(default=None, max_length=128)
+    metadata: RecommendationEventMetadata = Field(default_factory=RecommendationEventMetadata)

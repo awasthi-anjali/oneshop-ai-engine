@@ -1,11 +1,18 @@
-import type { MouseEvent } from 'react'
-import type { BundleSuggestion, CustomerIntent, RecommendationItem } from '../api'
+import type {
+  BundleSuggestion,
+  CustomerIntent,
+  PersonalizedProfile,
+  PersonalizedRecommendation,
+} from '../api'
 import SmartCartPanel from './SmartCartPanel'
 import './RecommendationsPanel.css'
 
 interface Props {
   intent: CustomerIntent | null
-  recommendations: RecommendationItem[]
+  recommendations: PersonalizedRecommendation[]
+  profile: PersonalizedProfile | null
+  profileVersion: number | string
+  streamStatus: 'connecting' | 'live' | 'fallback' | 'error'
   wishlistCount: number
   cartCount: number
   viewedCount: number
@@ -21,18 +28,16 @@ interface Props {
     aiPowered: boolean
     subtotal: number
   }
-  onToggleWishlist: (id: string) => void
-  onAddToCart: (id: string) => void
-  onRemoveFromCart: (id: string) => void
   onCheckout: () => void
   onAddBundle: (productIds: string[]) => void
-  wishlistIds: Set<string>
-  cartIds: Set<string>
 }
 
 export default function RecommendationsPanel({
   intent,
   recommendations,
+  profile,
+  profileVersion,
+  streamStatus,
   wishlistCount,
   cartCount,
   viewedCount,
@@ -42,39 +47,27 @@ export default function RecommendationsPanel({
   retrievalMethod,
   retrievalQuery,
   smartCart,
-  onToggleWishlist,
-  onAddToCart,
-  onRemoveFromCart,
   onCheckout,
   onAddBundle,
-  wishlistIds,
-  cartIds,
 }: Props) {
-  const handleRecCartClick = (e: MouseEvent, productId: string, inCart: boolean) => {
-    e.stopPropagation()
-    if (inCart) onRemoveFromCart(productId)
-    else onAddToCart(productId)
-  }
-
-  const sourceLabel = (source?: string) => {
-    if (source === 'ai') return 'AI pick'
-    if (source === 'semantic_backup') return 'Semantic match'
-    return 'Rule-based'
-  }
+  const strongestRecommendation = recommendations[0]
 
   return (
     <aside className="rec-panel">
       <div className="rec-panel-header">
-        <h2>For You</h2>
+        <h2>Why these picks?</h2>
         <div className="rec-header-badges">
           {aiPowered && <span className="rec-ai-badge">AI Powered</span>}
+          <span className={`rec-live-badge ${streamStatus}`}>
+            {streamStatus === 'live' ? 'Live' : streamStatus === 'connecting' ? 'Connecting' : 'Fetch fallback'}
+          </span>
           {recommendationPipeline === 'ai_validated' && (
             <span className="rec-pipeline-badge ai">AI validated</span>
           )}
           {recommendationPipeline === 'semantic_backup' && (
             <span className="rec-pipeline-badge semantic">Semantic backup</span>
           )}
-          <p className="rec-subtitle">Personalized Discovery</p>
+          <p className="rec-subtitle">Profile v{String(profileVersion)}</p>
         </div>
       </div>
 
@@ -103,13 +96,20 @@ export default function RecommendationsPanel({
         </div>
       </div>
 
+      {profile && (
+        <div className="profile-evidence">
+          <span>{profile.total_interactions} profile events</span>
+          {profile.channels_used.length > 0 && (
+            <span>{profile.channels_used.join(' + ')} continuity</span>
+          )}
+        </div>
+      )}
+
       {intent && (
         <div className="rec-intent">
-          <span className="rec-intent-label">Your intent</span>
+          <span className="rec-intent-label">Current shopping intent</span>
           <p>{intent.summary}</p>
-          {intent.ecosystem && (
-            <p className="rec-ecosystem">🏷 {intent.ecosystem}</p>
-          )}
+          {intent.ecosystem && <p className="rec-ecosystem">🏷 {intent.ecosystem}</p>}
           {intent.tags.length > 0 && (
             <div className="rec-tags">
               {intent.tags.map((tag) => (
@@ -120,54 +120,36 @@ export default function RecommendationsPanel({
         </div>
       )}
 
-      <div className="rec-list">
-        {loading ? (
-          <p className="rec-empty">Updating recommendations…</p>
-        ) : recommendations.length === 0 ? (
-          <p className="rec-empty">
-            Click products to view, ♡ wishlist, or 🛒 add to cart for AI recommendations
-          </p>
-        ) : (
-          recommendations.map(({ product, reason, source }) => {
-            const priceLabel =
-              product.category === 'plan'
-                ? `$${product.price.toFixed(0)}/mo`
-                : `$${product.price.toFixed(0)}`
-            const inCart = cartIds.has(product.id)
-
-            return (
-              <div key={product.id} className="rec-item">
-                <img src={product.image_url} alt={product.name} className="rec-item-img" />
-                <div className="rec-item-info">
-                  <span className="rec-item-brand">{product.brand}</span>
-                  <h4 className="rec-item-name">{product.name}</h4>
-                  <span className={`rec-item-source ${source || 'rules'}`}>{sourceLabel(source)}</span>
-                  <span className="rec-item-reason">{reason}</span>
-                  <div className="rec-item-footer">
-                    <span className="rec-item-price">{priceLabel}</span>
-                    <div className="rec-item-actions">
-                      <button
-                        className={`rec-icon-btn ${wishlistIds.has(product.id) ? 'active' : ''}`}
-                        onClick={() => onToggleWishlist(product.id)}
-                        title="Wishlist"
-                      >
-                        {wishlistIds.has(product.id) ? '♥' : '♡'}
-                      </button>
-                      <button
-                        className={`rec-icon-btn cart ${inCart ? 'active' : ''}`}
-                        onClick={(e) => handleRecCartClick(e, product.id, inCart)}
-                        title={inCart ? 'Click to remove from cart' : 'Add to cart'}
-                      >
-                        🛒
-                      </button>
-                    </div>
-                  </div>
-                </div>
+      <section className="ranking-evidence" aria-label="Recommendation evidence">
+        {loading && recommendations.length === 0 ? (
+          <p className="rec-empty">Preparing profile evidence…</p>
+        ) : strongestRecommendation ? (
+          <>
+            <span className="ranking-evidence-label">Strongest current match</span>
+            <div className="ranking-evidence-product">
+              <img src={strongestRecommendation.product.image_url} alt="" />
+              <div>
+                <strong>{strongestRecommendation.product.name}</strong>
+                <span>{Math.round(strongestRecommendation.score * 100)}% match</span>
               </div>
-            )
-          })
+            </div>
+            <p>{strongestRecommendation.explanation}</p>
+            <div className="rec-reason-codes">
+              {strongestRecommendation.reason_codes.slice(0, 3).map((code) => (
+                <span key={code}>{code.replace(/_/g, ' ').toLowerCase()}</span>
+              ))}
+            </div>
+            <details className="score-evidence">
+              <summary>Show score evidence</summary>
+              {Object.entries(strongestRecommendation.score_breakdown).map(([label, value]) => (
+                <span key={label}>{label.replace(/_/g, ' ')}: {Math.round(value * 100)}%</span>
+              ))}
+            </details>
+          </>
+        ) : (
+          <p className="rec-empty">Interact with products to build recommendation evidence.</p>
         )}
-      </div>
+      </section>
 
       <SmartCartPanel
         bundles={smartCart.bundles}
