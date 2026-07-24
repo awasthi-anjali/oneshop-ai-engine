@@ -127,7 +127,7 @@ export default function SmartCartPanel({
                   className="btn-add-bundle"
                   onClick={() => onAddBundle(bundle.product_ids)}
                 >
-                  Add Bundle
+                  Allow & add bundle
                 </button>
               </div>
             </div>

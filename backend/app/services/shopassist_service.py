@@ -33,6 +33,10 @@ from app.models.schemas import (
     ShopAssistActionType,
     ShopAssistRecommendation,
 )
+from app.services.guardrails import (
+    BOUNDARY_UNSUPPORTED_MESSAGE,
+    is_prompt_injection_or_off_topic,
+)
 from app.services.product_catalog import catalog
 from app.services.behavioral_memory import (
     BehavioralMemoryPatch,
@@ -62,12 +66,7 @@ SERVICE_WORDS = (
     "bill", "billing", "account", "contract", "network", "signal", "outage",
     "not working", "technical support", "fault", "password", "login",
 )
-UNSUPPORTED_WORDS = (
-    "poem", "write code", "coding", "recipe", "weather", "news", "joke",
-    "hidden prompt", "system prompt", "ignore previous", "developer message",
-    "system message", "forget previous", "reveal prompt", "act as system",
-    "override instructions", "bypass", "jailbreak",
-)
+UNSUPPORTED_WORDS = ()  # legacy; see guardrails.INJECTION_PHRASES
 SHOPPING_WORDS = (
     "phone", "iphone", "android", "pixel", "galaxy", "oneplus", "plan",
     "tablet", "data", "camera", "photography", "roaming", "travel", "budget",
@@ -241,7 +240,7 @@ class ShopAssistService:
             deterministic_intent == "ambiguous"
             and request.page_context
             and request.page_context.product_id
-            and not any(word in lowered for word in UNSUPPORTED_WORDS)
+            and not is_prompt_injection_or_off_topic(lowered)
         ):
             deterministic_intent = "shopping"
         if deterministic_intent == "ambiguous" and state.need.categories:
@@ -388,7 +387,7 @@ class ShopAssistService:
         return response
 
     def _intent(self, text: str) -> str:
-        if any(word in text for word in UNSUPPORTED_WORDS):
+        if is_prompt_injection_or_off_topic(text):
             return "unsupported"
         if any(word in text for word in SERVICE_WORDS):
             return "service"
@@ -1301,9 +1300,7 @@ class ShopAssistService:
             )]
             status = ChatStatus.SERVICE_HANDOFF
         else:
-            message = (
-                "I can only help with OneShop phones, plans, comparisons, and a cart proposal."
-            )
+            message = BOUNDARY_UNSUPPORTED_MESSAGE
             actions = []
             status = ChatStatus.UNSUPPORTED
         state.turns = state.turns[-12:]
