@@ -14,12 +14,13 @@ export default function MessageBubble({ message }: Props) {
   return (
     <div className={`message-row ${isUser ? 'user' : 'assistant'}`}>
       {!isUser && (
-        <div className="avatar assistant-avatar">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <div className="avatar assistant-avatar" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
             <path
-              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v2h-2v-2zm0-8h2v6h-2V9z"
+              d="M12 2.8c.55 4.45 2.75 6.65 7.2 7.2-4.45.55-6.65 2.75-7.2 7.2-.55-4.45-2.75-6.65-7.2-7.2 4.45-.55 6.65-2.75 7.2-7.2Z"
               fill="currentColor"
             />
+            <circle cx="18.5" cy="18.5" r="1.7" fill="currentColor" />
           </svg>
         </div>
       )}

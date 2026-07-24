@@ -153,7 +153,10 @@ class ProductCatalog:
                 if product.price <= max_p:
                     price_match = 1.5
 
-            return token_hits + phrase_bonus + price_match + product.rating * 0.1
+            relevance = token_hits + phrase_bonus + price_match
+            if relevance <= 0:
+                return 0.0
+            return relevance + product.rating * 0.1
 
         scored = [(product, score(product)) for product in products]
         scored = [(product, value) for product, value in scored if value > 0]

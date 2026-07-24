@@ -1,6 +1,11 @@
 from fastapi import APIRouter, HTTPException
 
-from app.models.schemas import ChatRequest, ChatResponse
+from app.models.schemas import (
+    CartConfirmationRequest,
+    CartConfirmationResponse,
+    ChatRequest,
+    ChatResponse,
+)
 from app.services.shopassist_service import shopassist
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -12,6 +17,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
         return await shopassist.chat(request)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/cart/confirm", response_model=CartConfirmationResponse)
+async def confirm_cart(request: CartConfirmationRequest) -> CartConfirmationResponse:
+    try:
+        return await shopassist.confirm_cart(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/health")

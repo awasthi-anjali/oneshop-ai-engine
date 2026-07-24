@@ -1,30 +1,41 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import {
   addBundleToCart,
   addToCart,
+  confirmShopAssistCartProposal,
+  DEMO_USERS,
   compareProducts,
   dismissAbandonment,
   fetchProducts,
   fetchProductsWithMeta,
   getIntelligenceProfile,
+  getPersonalizationUserId,
+  getPersonalizedRecommendations,
   getSession,
   getStoredSessionId,
   ensureSessionId,
+  onPersonalizationUserChange,
   removeFromCart,
   sendMessage,
+  setPersonalizationUserId,
+  subscribeToPersonalizedRecommendations,
+  trackInteraction,
   toggleWishlist,
   trackProductView,
   type AbandonmentStatus,
   type BundleSuggestion,
   type ChatAction,
+  type CartProposal,
   type ChatMessage,
   type ChatStatus,
   type CheckoutResponse,
   type NextBestAction,
   type PageContext,
   type Product,
+  type CustomerIntent,
+  type PersonalizedProfile,
+  type PersonalizedRecommendation,
   type ProductSearchMethod,
-  type RecommendationItem,
   type Channel,
   type ShoppingNeed,
   type ShopAssistRecommendation,
@@ -38,12 +49,14 @@ import OmnichannelSyncBanner from '../components/OmnichannelSyncBanner'
 import ProductDetailModal from '../components/ProductDetailModal'
 import ProductSearchBar from '../components/ProductSearchBar'
 import ProductShopCard from '../components/ProductShopCard'
+import ProfileSwitcher from '../components/ProfileSwitcher'
 import RecommendationsPanel from '../components/RecommendationsPanel'
 import ShopAssistDrawer from '../components/ShopAssistDrawer'
 import ShopAssistFab from '../components/ShopAssistFab'
 import { useCartAbandonmentTracking } from '../hooks/useCartAbandonment'
 import { useCrossTabSync } from '../hooks/useCrossTabSync'
 import {
+  filterProductsForSearch,
   nameMatchesQuery,
   priceRangeToParams,
   sortProducts,
@@ -69,6 +82,18 @@ const EMPTY_NEED: ShoppingNeed = {
   nice_to_haves: [],
 }
 
+const discoveryCategoryLabel = (category: string) => {
+  const labels: Record<string, string> = {
+    all: 'For You',
+    phone: 'Phones',
+    tablet: 'Tablets',
+    plan: 'Plans',
+    accessory: 'Accessories',
+    device: 'Devices',
+  }
+  return labels[category] ?? category
+}
+
 export default function ShopPage({
   channel = 'oneshop',
   layout = 'desktop',
@@ -82,7 +107,13 @@ export default function ShopPage({
   const [cartIds, setCartIds] = useState<Set<string>>(new Set())
   const [viewedIds, setViewedIds] = useState<Set<string>>(new Set())
   const [cartProducts, setCartProducts] = useState<Product[]>([])
-  const [recommendations, setRecommendations] = useState<RecommendationItem[]>([])
+  const [recommendations, setRecommendations] = useState<PersonalizedRecommendation[]>([])
+  const [personalizationUserId, setPersonalizationUser] = useState(getPersonalizationUserId)
+  const [personalizedProfile, setPersonalizedProfile] = useState<PersonalizedProfile | null>(null)
+  const [profileVersion, setProfileVersion] = useState<number | string>(0)
+  const [streamStatus, setStreamStatus] = useState<'connecting' | 'live' | 'fallback' | 'error'>('connecting')
+  const [personalizationError, setPersonalizationError] = useState<string | null>(null)
+  const [intent, setIntent] = useState<CustomerIntent | null>(null)
   const [aiPowered, setAiPowered] = useState(false)
   const [nbaActions, setNbaActions] = useState<NextBestAction[]>([])
   const [nbaStage, setNbaStage] = useState('new')
@@ -124,19 +155,28 @@ export default function ShopPage({
   const [assistRecommendations, setAssistRecommendations] = useState<ShopAssistRecommendation[]>([])
   const [comparison, setComparison] = useState<Product[]>([])
   const [assistActions, setAssistActions] = useState<ChatAction[]>([])
+  const [assistCartProposal, setAssistCartProposal] = useState<CartProposal | null>(null)
   const [assistStatus, setAssistStatus] = useState<ChatStatus | null>(null)
   const [assistMode, setAssistMode] = useState<'ai' | 'fallback' | null>(null)
   const [assistContext, setAssistContext] = useState<PageContext | null>(null)
   const [assistLoading, setAssistLoading] = useState(false)
   const [assistError, setAssistError] = useState<string | null>(null)
   const [catalogMode, setCatalogMode] = useState<'all' | 'picks'>('all')
+  const [showFullCatalog, setShowFullCatalog] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
   const lastSent = useRef('')
   const launcherRef = useRef<HTMLElement | null>(null)
   const confirmationInFlight = useRef(false)
+  const confirmationKeys = useRef(new Map<string, string>())
+  const impressionKeys = useRef(new Set<string>())
 
   useCartAbandonmentTracking(cartIds.size, sessionId)
+
+  useEffect(
+    () => onPersonalizationUserChange((userId) => setPersonalizationUser(userId)),
+    []
+  )
 
   const applySession = useCallback((session: {
     session_id: string
@@ -157,7 +197,7 @@ export default function ShopPage({
     try {
       const profile = await getIntelligenceProfile(sid, channel)
       setSessionId(profile.session_id)
-      setRecommendations(profile.recommendations)
+      setIntent(profile.intent)
       setAiPowered(profile.ai_powered)
       setNbaActions(profile.next_actions)
       setNbaStage(profile.funnel_stage)
@@ -180,6 +220,106 @@ export default function ShopPage({
       setRecLoading(false)
     }
   }, [channel])
+
+  const applyPersonalized = useCallback((response: Awaited<ReturnType<typeof getPersonalizedRecommendations>>) => {
+    setRecommendations(response.recommendations)
+    setPersonalizedProfile(response.profile)
+    setProfileVersion(response.profile_version)
+    setPersonalizationError(null)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setStreamStatus('connecting')
+    getPersonalizedRecommendations(personalizationUserId, sessionId, channel)
+      .then((response) => {
+        if (cancelled) return
+        applyPersonalized(response)
+        setStreamStatus('fallback')
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setStreamStatus('error')
+        setPersonalizationError(error instanceof Error ? error.message : 'Personalization unavailable.')
+      })
+    const unsubscribe = subscribeToPersonalizedRecommendations(
+      personalizationUserId,
+      sessionId,
+      channel,
+      'general',
+      6,
+      (response) => {
+        if (cancelled) return
+        applyPersonalized(response)
+        setStreamStatus('live')
+      },
+      () => {
+        if (!cancelled) setStreamStatus((current) => current === 'live' ? 'fallback' : current)
+      }
+    )
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [applyPersonalized, channel, personalizationUserId, sessionId])
+
+  useEffect(() => {
+    if (recommendations.length === 0) return
+    const key = `${personalizationUserId}:${channel}:${recommendations
+      .map((item) => item.product.id)
+      .join(',')}`
+    if (impressionKeys.current.has(key)) return
+    impressionKeys.current.add(key)
+    void Promise.all(recommendations.map((item) => trackInteraction({
+        user_id: personalizationUserId,
+        event_type: 'impression',
+        product_id: item.product.id,
+        channel,
+        session_id: sessionId,
+        metadata: { surface: 'for_you', visible: true },
+      }))).catch(() => {
+      impressionKeys.current.delete(key)
+    })
+  }, [channel, personalizationUserId, recommendations, sessionId])
+
+  const observeInteraction = useCallback((
+    event_type: 'product_view' | 'wishlist_add' | 'wishlist_remove' | 'cart_add' | 'cart_remove' | 'rec_click',
+    productId: string,
+    metadata: { rec_position?: number; rec_type?: string; surface?: string } = {}
+  ) => {
+    void trackInteraction({
+      user_id: personalizationUserId,
+      event_type,
+      product_id: productId,
+      channel,
+      session_id: sessionId,
+      metadata,
+    }).catch(() => {
+      setPersonalizationError('Your shopping action succeeded, but personalization could not update yet.')
+    })
+  }, [channel, personalizationUserId, sessionId])
+
+  const handleProfileChange = (userId: string) => {
+    setPersonalizationUserId(userId)
+    setPersonalizationUser(userId)
+    setRecommendations([])
+    setPersonalizedProfile(null)
+    setMessages([])
+    setDraft('')
+    setNeed(EMPTY_NEED)
+    setAssistRecommendations([])
+    setComparison([])
+    setAssistActions([])
+    setAssistStatus(null)
+    setAssistMode(null)
+    setAssistContext(null)
+    setAssistError(null)
+    setConfirmed(false)
+    setAssistCartProposal(null)
+    setFilter('all')
+    setCatalogMode('all')
+    setShowFullCatalog(false)
+  }
 
   const reloadFromServer = useCallback(async () => {
     const sid = getStoredSessionId() || ensureSessionId()
@@ -305,24 +445,29 @@ export default function ShopPage({
     setSelectedProduct(product)
     const session = await trackProductView(product.id, sessionId, channel)
     applySession({ ...session, cart: session.cart })
+    observeInteraction('product_view', product.id, { surface: 'catalog' })
     await refreshIntelligence(session.session_id)
   }
 
   const handleToggleWishlist = async (productId: string) => {
+    const wasWishlisted = wishlistIds.has(productId)
     const session = await toggleWishlist(productId, sessionId, channel)
     applySession({ ...session, cart: session.cart })
+    observeInteraction(wasWishlisted ? 'wishlist_remove' : 'wishlist_add', productId)
     await refreshIntelligence(session.session_id)
   }
 
   const handleAddToCart = async (productId: string) => {
     const session = await addToCart(productId, sessionId, channel)
     applySession({ ...session, cart: session.cart })
+    observeInteraction('cart_add', productId)
     await refreshIntelligence(session.session_id)
   }
 
   const handleRemoveFromCart = async (productId: string) => {
     const session = await removeFromCart(productId, sessionId, channel)
     applySession({ ...session, cart: session.cart })
+    observeInteraction('cart_remove', productId)
     await refreshIntelligence(session.session_id)
   }
 
@@ -396,12 +541,26 @@ export default function ShopPage({
           entry_point: 'help_me_choose',
           visible_product_ids: products.slice(0, 20).map((product) => product.id),
         },
-        channel
+        channel,
+        personalizationUserId,
+        personalizedProfile ? {
+          preferred_brands: Object.entries(personalizedProfile.brand_affinity)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([brand]) => brand),
+          preferred_categories: Object.entries(personalizedProfile.category_affinity)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([category]) => category),
+          price_centroid: personalizedProfile.price_centroid,
+          interaction_count: personalizedProfile.total_interactions,
+        } : undefined
       )
       setSessionId(response.session_id)
       setNeed(response.need_profile)
       setAssistRecommendations(response.recommendations.slice(0, 3))
       setAssistActions(response.actions)
+      setAssistCartProposal(response.cart_proposal ?? null)
       setAssistStatus(response.status)
       setAssistMode(response.mode)
       const comparisonProducts = Array.isArray(response.comparison)
@@ -417,14 +576,13 @@ export default function ShopPage({
           mode: response.mode,
         },
       ])
-      if (response.recommendations.length > 0) setCatalogMode('picks')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'ShopAssist could not respond.'
       setAssistError(message.replace(/port\s*8000/gi, 'service'))
     } finally {
       setAssistLoading(false)
     }
-  }, [assistContext, assistLoading, channel, draft, products, sessionId])
+  }, [assistContext, assistLoading, channel, draft, personalizationUserId, personalizedProfile, products, sessionId])
 
   const handleRemoveNeed = (key: keyof ShoppingNeed, value?: string) => {
     setNeed((current) => {
@@ -458,10 +616,9 @@ export default function ShopPage({
     if (action.type === 'REFINE') setDraft(action.label)
   }
 
-  const handleConfirmBundle = async (productIds: string[]) => {
-    if (confirmationInFlight.current || confirming || confirmed || productIds.length === 0) return
-    const validIds = new Set(assistRecommendations.map((item) => item.product.id))
-    if (!productIds.every((id) => validIds.has(id))) {
+  const handleConfirmProposal = async (proposalId: string) => {
+    if (confirmationInFlight.current || confirming || confirmed || !sessionId) return
+    if (!assistCartProposal || assistCartProposal.proposal_id !== proposalId) {
       setAssistError('This proposal is no longer valid. Please ask ShopAssist to refresh it.')
       return
     }
@@ -469,10 +626,52 @@ export default function ShopPage({
     setConfirming(true)
     setAssistError(null)
     try {
-      await handleAddBundle(productIds)
+      const idempotencyKey = confirmationKeys.current.get(proposalId) ?? crypto.randomUUID()
+      confirmationKeys.current.set(proposalId, idempotencyKey)
+      const result = await confirmShopAssistCartProposal(
+        proposalId,
+        idempotencyKey,
+        sessionId,
+        personalizationUserId,
+        channel,
+      )
+      setSessionId(result.session_id)
+      setCartIds(new Set(result.cart_summary.items.map((product) => product.id)))
+      setCartProducts(result.cart_summary.items)
+      setAssistCartProposal(null)
+      setAssistActions((current) => current.filter(
+        (action) =>
+          action.type !== 'PROPOSE_ADD_TO_CART'
+          && action.type !== 'PROPOSE_ADD_BUNDLE',
+      ))
+      const addedProducts = result.cart_summary.items.filter((product) =>
+        result.added_product_ids.includes(product.id),
+      )
+      setMessages((current) => [
+        ...current,
+        {
+          role: 'assistant',
+          content: addedProducts.length > 0
+            ? `Added ${addedProducts.map((product) => product.name).join(' and ')} to your cart. Your cart now has ${result.cart_summary.total_items} item${result.cart_summary.total_items === 1 ? '' : 's'}.`
+            : 'Those exact items were already in your cart. Nothing was added twice.',
+          status: 'recommended',
+          mode: 'fallback',
+        },
+      ])
       setConfirmed(true)
-    } catch {
-      setAssistError('The cart could not be updated. Nothing was added; please try again.')
+      setConfirming(false)
+      confirmationInFlight.current = false
+      try {
+        await refreshIntelligence(result.session_id)
+      } catch {
+        setAssistError('Added to cart. Recommendations could not refresh yet.')
+      }
+    } catch (error) {
+      setAssistError(
+        error instanceof Error
+          ? error.message
+          : 'The cart could not be updated. Nothing was added; please try again.',
+      )
     } finally {
       confirmationInFlight.current = false
       setConfirming(false)
@@ -484,9 +683,74 @@ export default function ShopPage({
   const categoryFiltered =
     filter === 'all' ? products : products.filter((product) => product.category === filter)
   const allFiltered = sortProducts(
-    normalizedQuery ? categoryFiltered : categoryFiltered.filter((product) => nameMatchesQuery(product, searchQuery)),
+    filterProductsForSearch(categoryFiltered, searchQuery, searchMethod),
     sortBy
   )
+  const activeDemoProfile = DEMO_USERS.find((user) => user.id === personalizationUserId) ?? DEMO_USERS[0]
+  const recommendationByProduct = new Map(
+    recommendations.map((recommendation, index) => [recommendation.product.id, { recommendation, index }])
+  )
+  const recentProducts = (personalizedProfile?.recent_views ?? [])
+    .map((productId) => products.find((product) => product.id === productId))
+    .filter((product): product is Product => Boolean(product))
+    .slice(0, 4)
+  const suggestedProducts = filter === 'all'
+    ? recommendations.map((recommendation) => recommendation.product)
+    : products
+        .filter((product) => product.category === filter)
+        .sort((left, right) => {
+          const leftRank = recommendationByProduct.get(left.id)?.index ?? Number.MAX_SAFE_INTEGER
+          const rightRank = recommendationByProduct.get(right.id)?.index ?? Number.MAX_SAFE_INTEGER
+          return leftRank - rightRank || right.rating - left.rating || left.id.localeCompare(right.id)
+        })
+  const suggestedHeading = filter === 'all'
+    ? `Suggested for ${activeDemoProfile.name}`
+    : `${discoveryCategoryLabel(filter)} for ${activeDemoProfile.name}`
+  const topPickProducts = suggestedProducts.slice(0, 3)
+  const topPickHeading = filter === 'all'
+    ? `Top picks for ${activeDemoProfile.name}`
+    : `Top ${discoveryCategoryLabel(filter).toLowerCase()} for ${activeDemoProfile.name}`
+  const profileAssistRecommendations: ShopAssistRecommendation[] = useMemo(
+    () => recommendations
+      .slice(0, 3)
+      .map((item, index) => ({
+        product: item.product,
+        slot: item.product.category === 'plan'
+          ? 'recommended_plan'
+          : index === 0 ? 'primary_phone' : 'alternative_phone',
+        reason_codes: item.reason_codes,
+        reason: item.explanation,
+      })),
+    [recommendations],
+  )
+  const drawerRecommendations = assistRecommendations.length > 0
+    ? assistRecommendations
+    : profileAssistRecommendations
+  const drawerRecommendationMode = assistRecommendations.length > 0 ? 'request' : 'profile'
+
+  const selectDiscoveryTab = (category: string) => {
+    setFilter(category)
+    setCatalogMode('all')
+    setShowFullCatalog(false)
+  }
+
+  const handleDiscoveryTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const lastIndex = categories.length - 1
+    const nextIndex =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? lastIndex
+          : event.key === 'ArrowRight'
+            ? (index + 1) % categories.length
+            : (index - 1 + categories.length) % categories.length
+    selectDiscoveryTab(categories[nextIndex])
+    window.requestAnimationFrame(() => {
+      document.getElementById(`discovery-tab-${categories[nextIndex]}`)?.focus()
+    })
+  }
   const filteredPickItems = assistRecommendations.filter(
     (item) =>
       (filter === 'all' ? true : item.product.category === filter) &&
@@ -508,6 +772,37 @@ export default function ShopPage({
     <>
       <div className={`shop-layout ${layout}`}>
         <section className="shop-main">
+          <ProfileSwitcher userId={personalizationUserId} onChange={handleProfileChange} />
+          <div className="discovery-tabs" role="tablist" aria-label="Personalized product categories">
+            {categories.map((category, index) => {
+              const label = discoveryCategoryLabel(category)
+              return (
+                <button
+                  id={`discovery-tab-${category}`}
+                  key={category}
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === category && catalogMode === 'all' && !showFullCatalog}
+                  aria-controls="suggested-products-panel"
+                  tabIndex={filter === category ? 0 : -1}
+                  className={filter === category && catalogMode === 'all' && !showFullCatalog ? 'active' : ''}
+                  onClick={() => selectDiscoveryTab(category)}
+                  onKeyDown={(event) => handleDiscoveryTabKeyDown(event, index)}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          {personalizationError && (
+            <div className="personalization-error" role="status">{personalizationError}</div>
+          )}
+          <OmnichannelSyncBanner
+            message={syncMessage}
+            channelsUsed={channelsUsed}
+            currentChannel={channel}
+          />
+
           {abandonment?.is_abandoned && (
             <AbandonmentBanner
               message={abandonment.recovery_message}
@@ -517,12 +812,6 @@ export default function ShopPage({
             />
           )}
 
-          <OmnichannelSyncBanner
-            message={syncMessage}
-            channelsUsed={channelsUsed}
-            currentChannel={channel}
-          />
-
           <NextBestActionBanner
             actions={nbaActions}
             aiPowered={nbaAi}
@@ -530,10 +819,126 @@ export default function ShopPage({
             onActionClick={handleNbaClick}
           />
 
+          <section className="personalized-surface" aria-labelledby="personalized-heading">
+            <div className="personalized-heading">
+              <div>
+                <span className="personalized-eyebrow">Highest-confidence matches</span>
+                <h2 id="personalized-heading">{topPickHeading}</h2>
+                <p>
+                  {filter === 'all'
+                    ? 'Three diverse picks ranked from weighted interaction signals across Web and Mobile.'
+                    : `Personalized matches first, followed by stable catalog quality within ${discoveryCategoryLabel(filter).toLowerCase()}.`}
+                </p>
+              </div>
+              <div className="personalized-heading-meta">
+                <span className={`personalized-live ${streamStatus}`}>
+                  {streamStatus === 'live' ? 'Live' : 'Updating'}
+                </span>
+                <span>Profile v{String(profileVersion)}</span>
+              </div>
+            </div>
+
+            {topPickProducts.length > 0 ? (
+              <div className="top-picks-grid">
+                {topPickProducts.map((product, position) => (
+                  <article className="top-pick-card" key={`${personalizationUserId}-${filter}-${product.id}`}>
+                    <button
+                      className="top-pick-main"
+                      type="button"
+                      onClick={() => {
+                        observeInteraction('rec_click', product.id, {
+                          rec_position: position + 1,
+                          surface: filter === 'all' ? 'top_picks' : 'category_top_picks',
+                        })
+                        void handleProductClick(product)
+                      }}
+                      aria-label={`Open top pick ${product.name}`}
+                    >
+                      <img src={product.image_url} alt="" />
+                      <span>
+                        <small>
+                          {product.brand} · {recommendationByProduct.has(product.id)
+                            ? `${Math.round(recommendationByProduct.get(product.id)!.recommendation.score * 100)}% match`
+                            : 'popular category pick'}
+                        </small>
+                        <strong>{product.name}</strong>
+                        <em>
+                          {recommendationByProduct.has(product.id)
+                            ? recommendationByProduct.get(product.id)!.recommendation.explanation
+                                .split(';')[0]
+                                .replace('Recommended because ', '')
+                            : `highly rated in the ${discoveryCategoryLabel(product.category).toLowerCase()} catalog`}
+                        </em>
+                      </span>
+                    </button>
+                    <div className="top-pick-footer">
+                      <strong>
+                        ${product.price.toFixed(0)}{product.category === 'plan' ? '/mo' : ''}
+                      </strong>
+                      <button
+                        type="button"
+                        onClick={() => handleAddToCart(product.id)}
+                        disabled={cartIds.has(product.id)}
+                        aria-label={cartIds.has(product.id) ? `${product.name} is in cart` : `Add ${product.name} to cart`}
+                      >
+                        {cartIds.has(product.id) ? 'In cart' : 'Add'}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="personalized-loading" role="status">
+                Preparing {activeDemoProfile.name}&apos;s ranked picks…
+              </div>
+            )}
+          </section>
+
+          {recentProducts.length > 0 && (
+            <section className="continue-surface" aria-labelledby="continue-heading">
+              <div>
+                <span className="personalized-eyebrow">Continue your journey</span>
+                <h2 id="continue-heading">
+                  {recentProducts.length === 1 ? 'Still looking at this?' : 'Still looking for these?'}
+                </h2>
+              </div>
+              <div className="continue-strip">
+                {recentProducts.map((product) => (
+                  <button
+                    type="button"
+                    key={product.id}
+                    className="continue-card"
+                    onClick={() => void handleProductClick(product)}
+                    aria-label={`Continue exploring ${product.name}`}
+                  >
+                    <img src={product.image_url} alt="" />
+                    <span>
+                      <strong>{product.name}</strong>
+                      <small>
+                        ${product.price.toFixed(0)}{product.category === 'plan' ? '/mo' : ''} · Continue exploring
+                      </small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           <div className="catalog-heading">
             <div>
-              <h2>{catalogMode === 'picks' ? 'ShopAssist Picks' : 'All Products'}</h2>
-              <p>Catalog information is synthetic demo data.</p>
+              <span className="personalized-eyebrow">
+                {showFullCatalog ? 'Unranked catalog' : catalogMode === 'picks' ? 'Explicit assistant result' : 'Personalized discovery'}
+              </span>
+              <h2>
+                {showFullCatalog ? 'Browse full catalog' : catalogMode === 'picks' ? 'ShopAssist Picks' : suggestedHeading}
+              </h2>
+              <p>
+                {showFullCatalog
+                  ? 'All synthetic demo products in catalog order.'
+                  : catalogMode === 'picks'
+                    ? 'Exact products returned for your latest ShopAssist request.'
+                    : 'Ranked for this profile; switch the category tabs to narrow the feed.'}
+              </p>
             </div>
             <div className="catalog-entry-actions">
               {cartIds.size > 0 && (
@@ -624,25 +1029,35 @@ export default function ShopPage({
             )}
             <div className="shop-toolbar-actions">
               <div className="catalog-modes" aria-label="Catalog view">
-                <button className={catalogMode === 'all' ? 'active' : ''} onClick={() => setCatalogMode('all')}>
-                  All Products
+                <button
+                  className={catalogMode === 'all' && !showFullCatalog ? 'active' : ''}
+                  onClick={() => {
+                    setCatalogMode('all')
+                    setShowFullCatalog(false)
+                  }}
+                >
+                  Suggested
                 </button>
                 {assistRecommendations.length > 0 && (
-                  <button className={catalogMode === 'picks' ? 'active' : ''} onClick={() => setCatalogMode('picks')}>
+                  <button
+                    className={catalogMode === 'picks' ? 'active' : ''}
+                    onClick={() => {
+                      setCatalogMode('picks')
+                      setShowFullCatalog(false)
+                    }}
+                  >
                     ShopAssist Picks ({assistRecommendations.length})
                   </button>
                 )}
-              </div>
-              <div className="shop-filters" aria-label="Product category">
-                {categories.map((category) => (
-                  <button
-                    key={category}
-                    className={`filter-btn ${filter === category ? 'active' : ''}`}
-                    onClick={() => setFilter(category)}
-                  >
-                    {category === 'all' ? 'All' : category}
-                  </button>
-                ))}
+                <button
+                  className={showFullCatalog ? 'active' : ''}
+                  onClick={() => {
+                    setCatalogMode('all')
+                    setShowFullCatalog(true)
+                  }}
+                >
+                  Full catalog
+                </button>
               </div>
             </div>
           </div>
@@ -675,7 +1090,13 @@ export default function ShopPage({
               </div>
             </div>
           ) : (
-          <div className="shop-grid">
+          <div
+            id="suggested-products-panel"
+            className="shop-grid"
+            role="tabpanel"
+            aria-labelledby={`discovery-tab-${filter}`}
+            aria-live="polite"
+          >
             {catalogMode === 'picks'
               ? sortedPickItems.map((item) => (
                   <ProductShopCard
@@ -694,13 +1115,27 @@ export default function ShopPage({
                     onToggleCompare={handleToggleCompare}
                   />
                 ))
-              : allFiltered.map((product) => (
+              : (normalizedQuery || showFullCatalog ? allFiltered : suggestedProducts).map((product) => {
+                  const recommendation = recommendationByProduct.get(product.id)?.recommendation
+                  return (
                   <ProductShopCard
                     key={product.id}
                     product={product}
+                    reason={recommendation?.explanation}
+                    reasonCodes={recommendation?.reason_codes.slice(0, 2)}
                     isWishlisted={wishlistIds.has(product.id)}
                     isInCart={cartIds.has(product.id)}
-                    onProductClick={handleProductClick}
+                    onProductClick={(selected) => {
+                      if (!showFullCatalog) {
+                        observeInteraction('rec_click', selected.id, {
+                          rec_position: recommendationByProduct.get(selected.id)
+                            ? recommendationByProduct.get(selected.id)!.index + 1
+                            : undefined,
+                          surface: filter === 'all' ? 'suggested_for_you' : 'category_suggestions',
+                        })
+                      }
+                      void handleProductClick(selected)
+                    }}
                     onToggleWishlist={handleToggleWishlist}
                     onAddToCart={handleAddToCart}
                     onRemoveFromCart={handleRemoveFromCart}
@@ -708,7 +1143,8 @@ export default function ShopPage({
                     isCompareSelected={compareIds.has(product.id)}
                     onToggleCompare={handleToggleCompare}
                   />
-                ))}
+                  )
+                })}
           </div>
           )}
 
@@ -733,7 +1169,11 @@ export default function ShopPage({
         </section>
 
         <RecommendationsPanel
+          intent={intent}
           recommendations={recommendations}
+          profile={personalizedProfile}
+          profileVersion={profileVersion}
+          streamStatus={streamStatus}
           wishlistCount={wishlistIds.size}
           cartCount={cartIds.size}
           viewedCount={viewedIds.size}
@@ -741,13 +1181,8 @@ export default function ShopPage({
           aiPowered={aiPowered}
           recommendationPipeline={recommendationPipeline}
           smartCart={smartCart}
-          onToggleWishlist={handleToggleWishlist}
-          onAddToCart={handleAddToCart}
-          onRemoveFromCart={handleRemoveFromCart}
           onCheckout={() => setShowCheckout(true)}
           onAddBundle={handleAddBundle}
-          wishlistIds={wishlistIds}
-          cartIds={cartIds}
         />
       </div>
 
@@ -776,9 +1211,16 @@ export default function ShopPage({
         need={need}
         context={assistContext}
         contextProduct={products.find((product) => product.id === assistContext?.product_id) ?? null}
-        recommendations={assistRecommendations}
+        recommendations={drawerRecommendations}
+        recommendationMode={drawerRecommendationMode}
+        recommendationHeading={
+          drawerRecommendationMode === 'profile'
+            ? `Recommended for ${activeDemoProfile.name}`
+            : 'ShopAssist recommends'
+        }
         comparison={comparison}
         actions={assistActions}
+        cartProposal={assistCartProposal}
         confirming={confirming}
         confirmed={confirmed}
         onClose={closeAssistant}
@@ -788,7 +1230,13 @@ export default function ShopPage({
         onRemoveContext={() => setAssistContext(null)}
         onRemoveNeed={handleRemoveNeed}
         onAction={handleAssistAction}
-        onConfirmBundle={handleConfirmBundle}
+        onConfirmProposal={handleConfirmProposal}
+        onViewPicks={() => {
+          setFilter('all')
+          setCatalogMode(drawerRecommendationMode === 'request' ? 'picks' : 'all')
+          setShowFullCatalog(false)
+          closeAssistant()
+        }}
       />
 
       <ProductDetailModal
