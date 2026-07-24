@@ -4,8 +4,10 @@ import {
   addToCart,
   confirmShopAssistCartProposal,
   DEMO_USERS,
+  compareProducts,
   dismissAbandonment,
   fetchProducts,
+  fetchProductsWithMeta,
   getIntelligenceProfile,
   getPersonalizationUserId,
   getPersonalizedRecommendations,
@@ -27,21 +29,25 @@ import {
   type ChatMessage,
   type ChatStatus,
   type CheckoutResponse,
-  type CustomerIntent,
   type NextBestAction,
   type PageContext,
   type Product,
+  type CustomerIntent,
   type PersonalizedProfile,
   type PersonalizedRecommendation,
+  type ProductSearchMethod,
   type Channel,
   type ShoppingNeed,
   type ShopAssistRecommendation,
 } from '../api'
 import AbandonmentBanner from '../components/AbandonmentBanner'
+import CatalogFilters from '../components/CatalogFilters'
 import CheckoutModal from '../components/CheckoutModal'
+import CompareModal from '../components/CompareModal'
 import NextBestActionBanner from '../components/NextBestActionBanner'
 import OmnichannelSyncBanner from '../components/OmnichannelSyncBanner'
 import ProductDetailModal from '../components/ProductDetailModal'
+import ProductSearchBar from '../components/ProductSearchBar'
 import ProductShopCard from '../components/ProductShopCard'
 import ProfileSwitcher from '../components/ProfileSwitcher'
 import RecommendationsPanel from '../components/RecommendationsPanel'
@@ -49,6 +55,14 @@ import ShopAssistDrawer from '../components/ShopAssistDrawer'
 import ShopAssistFab from '../components/ShopAssistFab'
 import { useCartAbandonmentTracking } from '../hooks/useCartAbandonment'
 import { useCrossTabSync } from '../hooks/useCrossTabSync'
+import {
+  nameMatchesQuery,
+  priceRangeToParams,
+  sortProducts,
+  type PriceRange,
+  type SortOption,
+} from '../utils/catalogFilters'
+import { addRecentSearch } from '../utils/recentSearches'
 import './ShopPage.css'
 
 interface Props {
@@ -112,16 +126,26 @@ export default function ShopPage({
     estimatedSavings: number
   }>({ bundles: [], nudge: '', checkoutTip: '', aiPowered: false, subtotal: 0, estimatedSavings: 0 })
   const [abandonment, setAbandonment] = useState<AbandonmentStatus | null>(null)
+  const [syncMessage, setSyncMessage] = useState('')
+  const [channelsUsed, setChannelsUsed] = useState<string[]>([])
   const [showCheckout, setShowCheckout] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
   const [recLoading, setRecLoading] = useState(false)
   const [filter, setFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchMethod, setSearchMethod] = useState<ProductSearchMethod>('name')
+  const [sortBy, setSortBy] = useState<SortOption>('relevance')
+  const [priceRange, setPriceRange] = useState<PriceRange>('all')
+  const [brandFilter, setBrandFilter] = useState('all')
+  const [catalogBrands, setCatalogBrands] = useState<string[]>([])
+  const [productNames, setProductNames] = useState<string[]>([])
+  const [compareIds, setCompareIds] = useState<Set<string>>(new Set())
+  const [compareOpen, setCompareOpen] = useState(false)
+  const [compareResults, setCompareResults] = useState<Product[]>([])
+  const [compareLoading, setCompareLoading] = useState(false)
   const [recommendationPipeline, setRecommendationPipeline] = useState('rules')
-  const [retrievalMethod, setRetrievalMethod] = useState('none')
-  const [retrievalQuery, setRetrievalQuery] = useState('')
-  const [syncMessage, setSyncMessage] = useState('')
-  const [channelsUsed, setChannelsUsed] = useState<string[]>([])
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -180,10 +204,6 @@ export default function ShopPage({
       setCartProducts(profile.cart)
       setCartIds(new Set(profile.cart.map((p) => p.id)))
       setRecommendationPipeline(profile.recommendation_pipeline || 'rules')
-      setRetrievalMethod(profile.retrieval_method || 'none')
-      setRetrievalQuery(profile.retrieval_query || '')
-      setSyncMessage(profile.sync_message || '')
-      setChannelsUsed(profile.channels_used || [])
       setSmartCart({
         bundles: profile.bundles,
         nudge: profile.nudge,
@@ -193,6 +213,8 @@ export default function ShopPage({
         estimatedSavings: profile.estimated_savings,
       })
       if (profile.abandonment?.is_abandoned) setAbandonment(profile.abandonment)
+      setSyncMessage(profile.sync_message ?? '')
+      setChannelsUsed(profile.channels_used ?? [])
     } finally {
       setRecLoading(false)
     }
@@ -303,7 +325,22 @@ export default function ShopPage({
     const session = await getSession(sid)
     applySession({ ...session, cart: session.cart })
     await refreshIntelligence(session.session_id)
-  }, [refreshIntelligence])
+  }, [applySession, refreshIntelligence])
+
+  const loadProducts = useCallback(
+    async (query: string, category: string, brand: string, price: PriceRange) => {
+      const { min_price, max_price } = priceRangeToParams(price)
+      return fetchProductsWithMeta({
+        query: query.trim() || undefined,
+        category: category !== 'all' ? category : undefined,
+        brand: brand !== 'all' ? brand : undefined,
+        min_price,
+        max_price,
+        limit: 50,
+      })
+    },
+    []
+  )
 
   useCrossTabSync(reloadFromServer)
 
@@ -326,8 +363,16 @@ export default function ShopPage({
   useEffect(() => {
     async function init() {
       try {
-        const [prods, session] = await Promise.all([fetchProducts(), getSession(sessionId)])
-        setProducts(prods)
+        const [catalog, session] = await Promise.all([
+          fetchProducts({ limit: 50 }),
+          getSession(sessionId),
+        ])
+        setCatalogBrands([...new Set(catalog.map((product) => product.brand))].sort())
+        setProductNames(catalog.map((product) => product.name))
+
+        const result = await loadProducts(searchQuery, filter, brandFilter, priceRange)
+        setProducts(result.products)
+        setSearchMethod(result.search_method)
         applySession({ ...session, cart: session.cart })
         await refreshIntelligence(session.session_id)
       } finally {
@@ -336,6 +381,64 @@ export default function ShopPage({
     }
     init()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (loading) return
+
+    let cancelled = false
+    const delay = searchQuery.trim() ? 300 : 0
+
+    const timer = window.setTimeout(async () => {
+      setSearchLoading(true)
+      try {
+        const result = await loadProducts(searchQuery, filter, brandFilter, priceRange)
+        if (!cancelled) {
+          setProducts(result.products)
+          setSearchMethod(result.search_method)
+        }
+      } finally {
+        if (!cancelled) setSearchLoading(false)
+      }
+    }, delay)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [searchQuery, filter, brandFilter, priceRange, loading, loadProducts])
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value)
+    if (value.trim()) setCatalogMode('all')
+  }
+
+  const handleSearchSubmit = (value: string) => {
+    const trimmed = value.trim()
+    if (trimmed) addRecentSearch(trimmed)
+  }
+
+  const handleToggleCompare = (productId: string) => {
+    setCompareIds((current) => {
+      const next = new Set(current)
+      if (next.has(productId)) next.delete(productId)
+      else if (next.size < 3) next.add(productId)
+      return next
+    })
+  }
+
+  const handleOpenCompare = async () => {
+    const ids = [...compareIds]
+    if (ids.length < 2) return
+    setCompareOpen(true)
+    setCompareLoading(true)
+    try {
+      setCompareResults(await compareProducts(ids))
+    } catch {
+      setCompareResults(products.filter((product) => compareIds.has(product.id)))
+    } finally {
+      setCompareLoading(false)
+    }
+  }
 
   const handleProductClick = async (product: Product) => {
     setSelectedProduct(product)
@@ -575,9 +678,12 @@ export default function ShopPage({
   }
 
   const categories = ['all', ...Array.from(new Set(products.map((product) => product.category)))]
-  const allFiltered = filter === 'all' ? products : products.filter((product) => product.category === filter)
-  const pickItems = assistRecommendations.filter((item) =>
-    filter === 'all' ? true : item.product.category === filter
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+  const categoryFiltered =
+    filter === 'all' ? products : products.filter((product) => product.category === filter)
+  const allFiltered = sortProducts(
+    normalizedQuery ? categoryFiltered : categoryFiltered.filter((product) => nameMatchesQuery(product, searchQuery)),
+    sortBy
   )
   const activeDemoProfile = DEMO_USERS.find((user) => user.id === personalizationUserId) ?? DEMO_USERS[0]
   const recommendationByProduct = new Map(
@@ -644,6 +750,20 @@ export default function ShopPage({
       document.getElementById(`discovery-tab-${categories[nextIndex]}`)?.focus()
     })
   }
+  const filteredPickItems = assistRecommendations.filter(
+    (item) =>
+      (filter === 'all' ? true : item.product.category === filter) &&
+      nameMatchesQuery(item.product, searchQuery)
+  )
+  const sortedPickItems = sortProducts(
+    filteredPickItems.map((item) => item.product),
+    sortBy
+  )
+    .map((product) => filteredPickItems.find((item) => item.product.id === product.id)!)
+    .filter(Boolean)
+  const showEmptySearch = catalogMode === 'all' && !searchLoading && normalizedQuery && allFiltered.length === 0
+  const hasSearchResults = catalogMode === 'all' && !searchLoading && normalizedQuery && allFiltered.length > 0
+  const showCompareMode = catalogMode === 'all'
 
   if (loading) return <div className="shop-loading">Loading OneShop…</div>
 
@@ -857,39 +977,118 @@ export default function ShopPage({
           </div>
 
           <div className="shop-toolbar">
-            <div className="catalog-modes" aria-label="Catalog view">
-              <button
-                className={catalogMode === 'all' && !showFullCatalog ? 'active' : ''}
-                onClick={() => {
-                  setCatalogMode('all')
-                  setShowFullCatalog(false)
-                }}
-              >
-                Suggested
-              </button>
-              {assistRecommendations.length > 0 && (
+            <div className="shop-search-row">
+              <ProductSearchBar
+                value={searchQuery}
+                onChange={handleSearchChange}
+                onSubmit={handleSearchSubmit}
+                loading={searchLoading}
+                productNames={productNames}
+              />
+              <CatalogFilters
+                sortBy={sortBy}
+                onSortChange={setSortBy}
+                priceRange={priceRange}
+                onPriceRangeChange={setPriceRange}
+                brands={catalogBrands}
+                brandFilter={brandFilter}
+                onBrandChange={setBrandFilter}
+              />
+              {searchMethod === 'embeddings' && normalizedQuery && (
+                <span className="semantic-search-badge" title="Results ranked with AI embeddings">
+                  ✦ AI matched
+                </span>
+              )}
+            </div>
+            {normalizedQuery && !searchLoading && catalogMode === 'all' && (
+              <div className="shop-search-meta-row">
+                <p className="shop-search-meta" aria-live="polite">
+                  {allFiltered.length} result{allFiltered.length === 1 ? '' : 's'} for &ldquo;{searchQuery.trim()}&rdquo;
+                </p>
+                {hasSearchResults && (
+                  <button
+                    type="button"
+                    className="search-assist-btn"
+                    onClick={(event) =>
+                      openAssistant(
+                        {
+                          surface: 'catalog',
+                          entry_point: 'help_me_choose',
+                          visible_product_ids: allFiltered.slice(0, 20).map((product) => product.id),
+                        },
+                        event.currentTarget,
+                        `Help me choose from these search results: ${allFiltered.map((product) => product.name).join(', ')}`
+                      )
+                    }
+                  >
+                    Ask ShopAssist about these results
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="shop-toolbar-actions">
+              <div className="catalog-modes" aria-label="Catalog view">
                 <button
-                  className={catalogMode === 'picks' ? 'active' : ''}
+                  className={catalogMode === 'all' && !showFullCatalog ? 'active' : ''}
                   onClick={() => {
-                    setCatalogMode('picks')
+                    setCatalogMode('all')
                     setShowFullCatalog(false)
                   }}
                 >
-                  ShopAssist Picks ({assistRecommendations.length})
+                  Suggested
                 </button>
-              )}
-              <button
-                className={showFullCatalog ? 'active' : ''}
-                onClick={() => {
-                  setCatalogMode('all')
-                  setShowFullCatalog(true)
-                }}
-              >
-                Full catalog
-              </button>
+                {assistRecommendations.length > 0 && (
+                  <button
+                    className={catalogMode === 'picks' ? 'active' : ''}
+                    onClick={() => {
+                      setCatalogMode('picks')
+                      setShowFullCatalog(false)
+                    }}
+                  >
+                    ShopAssist Picks ({assistRecommendations.length})
+                  </button>
+                )}
+                <button
+                  className={showFullCatalog ? 'active' : ''}
+                  onClick={() => {
+                    setCatalogMode('all')
+                    setShowFullCatalog(true)
+                  }}
+                >
+                  Full catalog
+                </button>
+              </div>
             </div>
           </div>
 
+          {showEmptySearch ? (
+            <div className="shop-empty-search">
+              <p>No products found for &ldquo;{searchQuery.trim()}&rdquo;</p>
+              <span>Try a different keyword, switch category, or ask ShopAssist for help.</span>
+              <div className="shop-empty-search-actions">
+                <button type="button" className="shop-empty-clear" onClick={() => setSearchQuery('')}>
+                  Clear search
+                </button>
+                <button
+                  type="button"
+                  className="shop-empty-assist"
+                  onClick={(event) =>
+                    openAssistant(
+                      {
+                        surface: 'catalog',
+                        entry_point: 'help_me_choose',
+                        visible_product_ids: products.slice(0, 20).map((product) => product.id),
+                      },
+                      event.currentTarget,
+                      `Help me find ${searchQuery.trim()}`
+                    )
+                  }
+                >
+                  Ask ShopAssist
+                </button>
+              </div>
+            </div>
+          ) : (
           <div
             id="suggested-products-panel"
             className="shop-grid"
@@ -898,7 +1097,7 @@ export default function ShopPage({
             aria-live="polite"
           >
             {catalogMode === 'picks'
-              ? pickItems.map((item) => (
+              ? sortedPickItems.map((item) => (
                   <ProductShopCard
                     key={item.product.id}
                     product={item.product}
@@ -910,6 +1109,9 @@ export default function ShopPage({
                     onToggleWishlist={handleToggleWishlist}
                     onAddToCart={handleAddToCart}
                     onRemoveFromCart={handleRemoveFromCart}
+                    compareMode={showCompareMode}
+                    isCompareSelected={compareIds.has(item.product.id)}
+                    onToggleCompare={handleToggleCompare}
                   />
                 ))
               : (showFullCatalog ? allFiltered : suggestedProducts).map((product) => {
@@ -936,10 +1138,33 @@ export default function ShopPage({
                     onToggleWishlist={handleToggleWishlist}
                     onAddToCart={handleAddToCart}
                     onRemoveFromCart={handleRemoveFromCart}
+                    compareMode={showCompareMode}
+                    isCompareSelected={compareIds.has(product.id)}
+                    onToggleCompare={handleToggleCompare}
                   />
                   )
                 })}
           </div>
+          )}
+
+          {compareIds.size > 0 && (
+            <div className="compare-bar">
+              <span>{compareIds.size} selected (max 3)</span>
+              <div className="compare-bar-actions">
+                <button type="button" className="compare-bar-clear" onClick={() => setCompareIds(new Set())}>
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  className="compare-bar-go"
+                  disabled={compareIds.size < 2}
+                  onClick={handleOpenCompare}
+                >
+                  Compare {compareIds.size} products
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         <RecommendationsPanel
@@ -954,8 +1179,6 @@ export default function ShopPage({
           loading={recLoading}
           aiPowered={aiPowered}
           recommendationPipeline={recommendationPipeline}
-          retrievalMethod={retrievalMethod}
-          retrievalQuery={retrievalQuery}
           smartCart={smartCart}
           onCheckout={() => setShowCheckout(true)}
           onAddBundle={handleAddBundle}
@@ -1046,6 +1269,13 @@ export default function ShopPage({
         discountOffer={abandonment?.discount_offer ?? 0}
         onClose={() => setShowCheckout(false)}
         onSuccess={handleCheckoutSuccess}
+      />
+
+      <CompareModal
+        open={compareOpen}
+        products={compareResults}
+        loading={compareLoading}
+        onClose={() => setCompareOpen(false)}
       />
     </>
   )

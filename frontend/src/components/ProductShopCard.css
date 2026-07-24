@@ -33,7 +33,7 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(15, 17, 23, 0.75);
+  background: rgba(255, 255, 255, 0.92);
   border: 1px solid var(--border);
   color: var(--text-muted);
   font-size: 1.1rem;
@@ -41,7 +41,32 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  backdrop-filter: blur(4px);
+}
+
+.compare-select-btn {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.compare-select-btn.active,
+.compare-select-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+}
+
+.shop-card.compare-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
 }
 
 .wishlist-btn:hover {
@@ -174,25 +199,4 @@
   color: var(--success);
   font-size: 0.6rem;
   font-weight: 700;
-}
-
-.shop-card-image {
-  background: var(--surface-secondary);
-}
-
-.wishlist-btn {
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.shop-card-category {
-  background: var(--primary);
-}
-
-.shop-card-rating {
-  color: var(--warning);
-}
-
-.btn-cart.in-cart {
-  background: var(--success-soft);
-  border-color: var(--success);
 }

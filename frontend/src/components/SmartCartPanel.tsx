@@ -23,7 +23,7 @@ export default function SmartCartPanel({
   onAddBundle,
 }: Props) {
   return (
-    <div className="smart-cart">
+    <div className="smart-cart smart-cart-scroll">
       <div className="smart-cart-header">
         <h3>Smart Cart</h3>
         {aiPowered && <span className="smart-ai">AI</span>}

@@ -43,7 +43,7 @@ guide in the observed golden journeys. Remaining claims must stay narrow:
 | One canonical prompt | Verified | Code inspection: one prompt module and one bounded parser call path |
 | Currency and billing cadence | Verified | Backend contract tests and live proposal totals (`$699` once, `$85/month`) |
 | Accessible responsive light theme | Partial | Three viewports, sampled AA token contrast, visible focus ring, no app overflow, mobile input visible; real software keyboard and simultaneous checkout layering not exercised |
-| Automated evaluation evidence | Verified | Final combined regression: 73 backend tests and 24 frontend tests pass; production build transforms 225 modules |
+| Automated evaluation evidence | Verified | Fresh post-merge regression: 73 backend tests and 26 frontend tests pass; production build transforms 234 modules |
 | OneApp UI and production persistence | Missing | Explicitly deferred from V1 |
 
 ## Baseline verification
@@ -85,11 +85,11 @@ desktop proposal, 1024px drawer, 375px sheet, and product-modal layering.
 
 ## Conversational-routing and Magenta-pattern follow-up
 
-Fresh evidence on 2026-07-24:
+Fresh post-`origin/main` integration evidence on 2026-07-24:
 
-- `python -m pytest -q` - exit 0; 73 tests passed in 11.04s.
-- `npm test -- --run` - exit 0; 5 files and 24 tests passed.
-- `npm run build` - exit 0; 225 modules transformed.
+- `python -m pytest -q` - exit 0; 73 tests passed in 9.75s.
+- `npm test -- --run` - exit 0; 5 files and 26 tests passed in 8.89s.
+- `npm run build` - exit 0; 234 modules transformed in 1.26s.
 - The reported `$300` typo/paraphrase returns an honest phone no-match instead
   of `unsupported`.
 - Discount, deal, cashback, promotion, and rebate turns remain in scope but
@@ -100,3 +100,13 @@ Fresh evidence on 2026-07-24:
 - The live 375x812 drawer had no horizontal overflow and kept the composer
   fully visible. It now uses direct quick replies, a branded assistant marker,
   and a compact AI-accuracy disclosure without collecting identity or PII.
+- The integrated browser run also covered greeting, thanks, ambiguous travel
+  language, prompt injection, an exact Pixel 8 proposal, explicit confirmation,
+  and a safe post-mutation recommendation-refresh fallback. Proposal replay and
+  duplicate-mutation resistance remain covered by backend idempotency tests.
+- Measured page widths were exact at 1440, 1024, and 375 pixels. The mobile
+  drawer measured 375x812 and its 151-pixel composer remained fully inside the
+  viewport.
+- The duplicate omnichannel sync banner introduced during conflict resolution
+  was traced to two adjacent `OmnichannelSyncBanner` renders; the second render
+  was removed and the frontend tests/build were rerun.

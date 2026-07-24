@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useSpeechToText } from '../hooks/useSpeechToText'
 import type {
   ChatAction,
   CartProposal,
@@ -42,6 +43,8 @@ interface Props {
   onConfirmProposal: (proposalId: string) => void
   onViewPicks: () => void
 }
+
+const MAX_MESSAGE_LENGTH = 1000
 
 const STARTERS = [
   { label: 'Find a phone', text: 'Help me find a phone for my needs.' },
@@ -126,6 +129,17 @@ export default function ShopAssistDrawer({
   const bottomRef = useRef<HTMLDivElement>(null)
   const recommendationsRef = useRef<HTMLElement>(null)
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<string | null>(null)
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null)
+
+  const { listening, supported, toggle, abort } = useSpeechToText({
+    disabled: loading,
+    onInterim: onDraftChange,
+    onFinal: (text) => {
+      setVoiceNotice(null)
+      onSend(text.slice(0, MAX_MESSAGE_LENGTH))
+    },
+    onError: setVoiceNotice,
+  })
 
   useEffect(() => {
     if (!open) return
@@ -154,6 +168,13 @@ export default function ShopAssistDrawer({
       recommendationsRef.current?.scrollIntoView({ block: 'start' })
     }
   }, [open, recommendationMode, recommendations])
+
+  useEffect(() => {
+    if (!open) {
+      abort()
+      setVoiceNotice(null)
+    }
+  }, [abort, open])
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -476,23 +497,52 @@ export default function ShopAssistDrawer({
             id="shopassist-input"
             ref={inputRef}
             value={draft}
-            maxLength={1000}
+            maxLength={MAX_MESSAGE_LENGTH}
             rows={2}
             onChange={(event) => onDraftChange(event.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="For example: Android camera phone under $700"
-            disabled={loading}
+            disabled={loading || listening}
+            aria-describedby={voiceNotice ? 'shopassist-voice-notice' : undefined}
           />
+          {supported && (
+            <button
+              type="button"
+              className={`assist-mic ${listening ? 'listening' : ''}`}
+              onClick={() => {
+                setVoiceNotice(null)
+                toggle()
+              }}
+              disabled={loading}
+              aria-label={listening ? 'Stop voice input' : 'Start voice input'}
+              aria-pressed={listening}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" />
+                <path d="M19 11a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V21H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-3.08A7 7 0 0 0 19 11Z" />
+              </svg>
+            </button>
+          )}
           <button
             className="assist-send"
             onClick={() => onSend()}
-            disabled={loading || !draft.trim()}
+            disabled={loading || listening || !draft.trim()}
             aria-label="Send to ShopAssist"
           >
             Send
           </button>
         </div>
-        <span className="composer-help">Enter to send · Shift+Enter for a new line</span>
+        {voiceNotice ? (
+          <span id="shopassist-voice-notice" className="composer-help voice-notice" role="status">
+            {voiceNotice}
+          </span>
+        ) : (
+          <span className="composer-help">
+            {supported
+              ? 'Mic to speak and search · Enter to send · Shift+Enter for a new line'
+              : 'Enter to send · Shift+Enter for a new line'}
+          </span>
+        )}
         <p className="assist-disclosure">
           AI-guided answers can be inaccurate. Product facts, prices, and cart changes are validated by OneShop.
         </p>

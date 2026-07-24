@@ -1,7 +1,7 @@
 import { useState, type ComponentProps } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   CartProposal,
   ChatAction,
@@ -127,7 +127,41 @@ const cartProposal: CartProposal = {
   monthly_total: 85,
 }
 
+class MockSpeechRecognition {
+  lang = 'en-US'
+  continuous = false
+  interimResults = true
+  onstart: (() => void) | null = null
+  onend: (() => void) | null = null
+  onerror: ((event: { error: string }) => void) | null = null
+  onresult: ((event: {
+    resultIndex: number
+    results: Array<{ isFinal: boolean; 0: { transcript: string } }>
+  }) => void) | null = null
+
+  start = vi.fn(() => {
+    this.onstart?.()
+    this.onresult?.({
+      resultIndex: 0,
+      results: [{ isFinal: true, 0: { transcript: 'Android camera phone under $700' } }],
+    })
+    this.onend?.()
+  })
+
+  stop = vi.fn(() => this.onend?.())
+  abort = vi.fn(() => this.onend?.())
+}
+
 describe('ShopAssistDrawer', () => {
+  beforeEach(() => {
+    ;(window as Window & { SpeechRecognition?: typeof MockSpeechRecognition }).SpeechRecognition =
+      MockSpeechRecognition
+  })
+
+  afterEach(() => {
+    delete (window as Window & { SpeechRecognition?: typeof MockSpeechRecognition }).SpeechRecognition
+  })
+
   it('renders compact request pills, expands the best match, and requires explicit shop handoff', async () => {
     const user = userEvent.setup()
     const onViewPicks = vi.fn()
@@ -315,6 +349,17 @@ describe('ShopAssistDrawer', () => {
     await user.click(screen.getByRole('button', { name: 'Open guide' }))
     expect(screen.getByRole('textbox', { name: 'Describe what you need' })).toHaveValue('keep this draft')
     expect(screen.getByText('Grounded result')).toBeInTheDocument()
+  })
+
+  it('auto-sends voice input after speech is converted to text', async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    const onDraftChange = vi.fn()
+    render(<ShopAssistDrawer {...baseProps({ onSend, onDraftChange })} />)
+
+    await user.click(screen.getByRole('button', { name: 'Start voice input' }))
+    expect(onDraftChange).toHaveBeenCalledWith('Android camera phone under $700')
+    expect(onSend).toHaveBeenCalledWith('Android camera phone under $700')
   })
 
   it('sends on Enter, preserves a newline on Shift+Enter, and blocks loading duplicates', async () => {

@@ -21,10 +21,10 @@ The V1 uses the actual 18-item catalog, persists append-only interaction events 
 | Explanation grounding | Pass | Every audited reason code came from the declared allow-list; scores and all six components were in `[0,1]`; visible explanations referenced validated brand/category/query/price/recency evidence |
 | Metadata privacy | Pass at API/storage boundary | Raw-chat metadata received 422; persisted audit rows contained only normalized `query`, `rec_position`, and `surface`; database search found no `raw_chat` or `@` metadata |
 | ShopAssist hard constraints | Pass | Backend test sent an Apple preference with `Android under $500`; every result remained Android and at or below $500 |
-| Frontend automated tests | Pass | Final reverification: `5` files, `24` tests passed; includes compact ShopAssist header/context, direct quick replies, keyboard-operable recommendation pills, exact proposal totals, duplicate-action suppression, backend-controlled comparison, immediate profile recommendations, and explicit post-chat handoff |
+| Frontend automated tests | Pass | Fresh post-fix reverification: `5` files, `26` tests passed; includes upstream voice input plus compact ShopAssist header/context, direct quick replies, keyboard-operable recommendation pills, exact proposal totals, duplicate-action suppression, backend-controlled comparison, immediate profile recommendations, and explicit post-chat handoff |
 | Existing ShopAssist regression | Pass | Included in complete backend/frontend runs; no regression failures |
 | Natural-language ShopAssist routing | Pass for tested attacks | Currency suffixes (`dollars`, `USD`, `bucks`), typo `sugest`, inherited phone context, promotion synonyms, greetings, thanks, and ambiguous AI classification are covered. Hard injection/service boundaries still precede AI and catalog facts remain deterministic |
-| Production build | Pass | `tsc -b && vite build`: `225 modules transformed`, built in `3.22s`; JS 326.55 kB (101.58 kB gzip), CSS 48.54 kB (8.71 kB gzip) |
+| Production build | Pass | Fresh post-fix `tsc -b && vite build`: `234 modules transformed`, built in `1.26s`; JS 340.69 kB (105.81 kB gzip), CSS 56.66 kB (10.00 kB gzip) |
 | Frontend event tracking | Pass | Live browser load produced six HTTP 200 impression writes for six visible products, each with a product ID and exact metadata `{"surface":"for_you","visible":true}`. Clicking the first recommendation produced one HTTP 200 `rec_click` with `rec_position`/`surface`, followed by the intentional catalog `product_view`; no 422 remained |
 | No double tracking | Pass | Reposting the captured browser `rec_click` event ID and a captured browser impression event ID each returned `accepted: false, duplicate: true`; SQLite retained one row per event ID |
 | Responsive light theme | Pass | Desktop and tablet show the switcher, live For You, continuity, grounded explanations, and score components. Fresh 375 px evidence shows a full-width recommendation, complete explanation, reason codes, price/actions, and all six expanded score components; the former 400 px cap is gone |
@@ -37,16 +37,16 @@ Run from the stated directories on 2026-07-24:
 backend> python -m pytest -q
 ........................................................................ [ 98%]
 .                                                                        [100%]
-73 passed in 11.04s
+73 passed in 9.75s
 
 frontend> npm test -- --run
 Test Files  5 passed (5)
-Tests       24 passed (24)
-Duration    11.46s
+Tests       26 passed (26)
+Duration    8.89s
 
 frontend> npm run build
-225 modules transformed
-built in 3.22s
+234 modules transformed
+built in 1.26s
 ```
 
 The independent TestClient probe made 40 warmed recommendation requests for `user_011?query=phone&limit=6`: median **350.16 ms**, p95 **379.23 ms**, max **386.82 ms**. This is an in-process development measurement, not a production benchmark, but it decisively does not support the fictional 25 ms claim.
@@ -73,6 +73,9 @@ SQLite inspection of the accepted audit events showed normalized metadata:
 - `evidence/recommendations-tablet-1024.png` — Dev profile, visibly different ranking, expanded six-component score evidence.
 - `evidence/recommendations-mobile-375.png` — responsive mobile profile switcher in the light theme.
 - `evidence/recommendations-mobile-375-for-you.png` — corrected mobile For You layout with a full recommendation, grounded explanation, reason codes, and expanded semantic/brand/category/price/popularity/recency evidence.
+- `evidence/shopassist-budget-discount-cashback-integrated.png` — exact typo/budget, discount/deal, and cashback follow-up sequence after merging current `origin/main`.
+- `evidence/shopassist-integrated-desktop-1440.png`, `shopassist-integrated-tablet-1024.png`, and `shopassist-integrated-mobile-375.png` — post-merge ShopAssist layout and cart-confirmation evidence.
+- `evidence/omnichannel-sync-single-integrated.png` — storefront after removing the duplicated `OmnichannelSyncBanner` render introduced during conflict resolution.
 
 ## Spec assumption roast
 
