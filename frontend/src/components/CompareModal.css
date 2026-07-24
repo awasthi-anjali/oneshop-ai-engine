@@ -1,0 +1,56 @@
+.compare-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(27, 31, 35, 0.45);
+}
+
+.compare-modal {
+  width: min(920px, 100%);
+  max-height: min(85vh, 760px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.compare-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.compare-modal-header h3 {
+  font-size: 1.05rem;
+}
+
+.compare-modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 1.2rem;
+  color: var(--text-muted);
+}
+
+.compare-modal-close:hover {
+  background: var(--surface-secondary);
+  color: var(--text);
+}
+
+.compare-modal-body {
+  overflow: auto;
+  padding: 16px 18px 20px;
+}
+
+.compare-modal-loading {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}

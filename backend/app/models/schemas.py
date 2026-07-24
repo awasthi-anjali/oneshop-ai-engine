@@ -191,6 +191,11 @@ class ProductSearchRequest(BaseModel):
     limit: int = 10
 
 
+class ProductSearchResponse(BaseModel):
+    products: list[Product] = Field(default_factory=list)
+    search_method: str = "name"  # name | embeddings | keyword
+
+
 class CompareRequest(BaseModel):
     product_ids: list[str] = Field(..., min_length=2, max_length=4)
 

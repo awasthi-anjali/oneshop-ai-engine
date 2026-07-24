@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from app.models.schemas import CompareRequest, Product, ProductCategory, ProductSearchRequest
+from app.models.schemas import CompareRequest, Product, ProductCategory, ProductSearchRequest, ProductSearchResponse
 from app.services.product_catalog import catalog
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
-@router.get("", response_model=list[Product])
+@router.get("")
 async def list_products(
     query: str = "",
     category: ProductCategory | None = None,
@@ -14,7 +14,8 @@ async def list_products(
     min_price: float | None = None,
     brand: str | None = None,
     limit: int = Query(default=20, le=50),
-) -> list[Product]:
+    include_meta: bool = False,
+):
     req = ProductSearchRequest(
         query=query,
         category=category,
@@ -23,6 +24,9 @@ async def list_products(
         brand=brand,
         limit=limit,
     )
+    if include_meta:
+        products, search_method = catalog.search_with_meta(req)
+        return ProductSearchResponse(products=products, search_method=search_method)
     return catalog.search(req)
 
 

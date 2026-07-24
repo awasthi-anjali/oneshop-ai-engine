@@ -1,17 +1,24 @@
 .smart-cart {
   border-top: 1px solid var(--border);
-  padding: 14px 18px;
+  padding: 10px 12px;
+  flex-shrink: 0;
+  max-height: min(240px, 38vh);
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
 .smart-cart-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .smart-cart-header h3 {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 700;
 }
 
@@ -25,20 +32,20 @@
 }
 
 .smart-nudge {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   color: var(--text);
-  line-height: 1.45;
-  margin-bottom: 8px;
-  padding: 8px 10px;
+  line-height: 1.4;
+  margin-bottom: 6px;
+  padding: 6px 8px;
   background: var(--primary-soft);
-  border-radius: 8px;
+  border-radius: 6px;
   border-left: 3px solid var(--primary);
 }
 
 .smart-tip {
-  font-size: 0.75rem;
+  font-size: 0.68rem;
   color: var(--accent);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .smart-empty {
@@ -63,13 +70,13 @@
 
 .btn-checkout-main {
   width: 100%;
-  padding: 11px;
-  border-radius: 10px;
+  padding: 9px;
+  border-radius: 8px;
   background: var(--primary);
   color: white;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   transition: background 0.2s;
 }
 
