@@ -7,9 +7,8 @@ interface Props {
   open: boolean
   cart: Product[]
   sessionId: string | null
-  subtotal: number
-  estimatedSavings: number
-  discountOffer: number
+  oneTimeTotal: number
+  monthlyTotal: number
   onClose: () => void
   onSuccess: (order: CheckoutResponse) => void
 }
@@ -18,9 +17,8 @@ export default function CheckoutModal({
   open,
   cart,
   sessionId,
-  subtotal,
-  estimatedSavings,
-  discountOffer,
+  oneTimeTotal,
+  monthlyTotal,
   onClose,
   onSuccess,
 }: Props) {
@@ -32,9 +30,6 @@ export default function CheckoutModal({
   const [order, setOrder] = useState<CheckoutResponse | null>(null)
 
   if (!open) return null
-
-  const discountAmount = subtotal * (discountOffer / 100)
-  const total = Math.max(subtotal - estimatedSavings - discountAmount, 0)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -61,10 +56,18 @@ export default function CheckoutModal({
           <p className="order-id">Order {order.order_id}</p>
           <p>{order.message}</p>
           <div className="checkout-summary">
-            <div className="summary-row total">
-              <span>Total paid</span>
-              <span>${order.total.toFixed(2)}</span>
-            </div>
+            {order.one_time_total > 0 && (
+              <div className="summary-row total">
+                <span>Paid once</span>
+                <span>${order.one_time_total.toFixed(2)}</span>
+              </div>
+            )}
+            {order.monthly_total > 0 && (
+              <div className="summary-row total">
+                <span>Monthly service</span>
+                <span>${order.monthly_total.toFixed(2)}/month</span>
+              </div>
+            )}
           </div>
           <button className="checkout-submit" onClick={onClose}>Continue Shopping</button>
         </div>
@@ -94,26 +97,19 @@ export default function CheckoutModal({
         </div>
 
         <div className="checkout-summary">
-          <div className="summary-row">
-            <span>Subtotal</span>
-            <span>${subtotal.toFixed(2)}</span>
-          </div>
-          {estimatedSavings > 0 && (
-            <div className="summary-row savings">
-              <span>Bundle savings</span>
-              <span>-${estimatedSavings.toFixed(2)}</span>
+          {oneTimeTotal > 0 && (
+            <div className="summary-row total">
+              <span>Due once</span>
+              <span>${oneTimeTotal.toFixed(2)}</span>
             </div>
           )}
-          {discountOffer > 0 && (
-            <div className="summary-row savings">
-              <span>Recovery discount ({discountOffer}%)</span>
-              <span>-${discountAmount.toFixed(2)}</span>
+          {monthlyTotal > 0 && (
+            <div className="summary-row total">
+              <span>Monthly service</span>
+              <span>${monthlyTotal.toFixed(2)}/month</span>
             </div>
           )}
-          <div className="summary-row total">
-            <span>Total</span>
-            <span>${total.toFixed(2)}</span>
-          </div>
+          <p className="checkout-subtitle">No promotional discount is assumed.</p>
         </div>
 
         <form className="checkout-form" onSubmit={handleSubmit}>
@@ -136,7 +132,7 @@ export default function CheckoutModal({
           </label>
           {error && <p className="checkout-error">{error}</p>}
           <button type="submit" className="checkout-submit" disabled={loading || cart.length === 0}>
-            {loading ? 'Processing…' : `Pay $${total.toFixed(2)}`}
+            {loading ? 'Processing…' : 'Confirm demo order'}
           </button>
         </form>
       </div>

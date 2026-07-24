@@ -59,7 +59,7 @@ export default function IdleCartNudge({ cartItems, onCheckout, onDismiss }: Prop
         You have {cartItems.length} item{cartItems.length > 1 ? 's' : ''} worth ${total.toFixed(2)} in your cart.
       </p>
       <p className="idle-nudge-hint">
-        These items are popular — complete your purchase before they&apos;re gone!
+        Your current selections are ready whenever you want to continue.
       </p>
       <button type="button" className="idle-nudge-checkout" onClick={() => { setShow(false); onCheckout() }}>
         Complete Purchase

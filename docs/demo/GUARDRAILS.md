@@ -25,7 +25,8 @@ ShopAssist returns a fixed commerce boundary for attacks such as:
 
 - Recommendations validated against product catalog (stock, IDs)
 - Smart Cart cross-sell and bundles use rules + profile, not LLM product picks
-- AI nudge text cannot claim dollar savings when rules computed zero discount
+- Smart Cart copy is deterministic and cannot claim discounts, scarcity, shipping, or compatibility facts from an LLM
+- No promotion is assumed unless a future trusted offer source supplies one
 
 ## 4. Smart Cart output validator
 
@@ -33,7 +34,9 @@ Before API response:
 
 - Max 2 cross-sells, max 1 bundle
 - Never suggest products already in cart
-- Recalculate totals from validated bundles
+- Re-resolve every suggestion from the catalog and drop unknown/out-of-stock IDs
+- Keep current-cart totals separate from proposed add-on prices
+- Separate one-time device charges from monthly plan charges
 
 ## 5. Session / profile binding
 
@@ -48,4 +51,4 @@ Same `session_id` keeps cart across OneShop web and OneApp mobile.
 
 ## 30-second demo script
 
-> "Our assistant is commerce-bounded. Prompt attacks get a fixed refusal. Cart changes need explicit Allow. Products and prices come from the catalog. Smart Cart upsells are rules-based with validation. Same session works across channels."
+> "Our assistant is commerce-bounded. Prompt attacks get a fixed refusal. Cart changes need explicit Allow. Products and prices come from the catalog. Smart Cart add-ons are rules-based, do not assume an offer, and keep one-time and monthly totals separate. Same session works across channels."

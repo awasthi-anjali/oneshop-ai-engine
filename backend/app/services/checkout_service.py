@@ -1,26 +1,27 @@
 from app.models.schemas import CheckoutResponse, Product, ProductCategory
-from app.services.product_catalog import catalog
 from app.services.session_store import session_store
 
 
-def _estimate_bundle_savings(cart: list[Product]) -> float:
-    savings = 0.0
-    categories = {p.category for p in cart}
-    if ProductCategory.PHONE in categories:
-        savings += 15.0
-        if ProductCategory.ACCESSORY in categories:
-            savings += 20.0
-    elif ProductCategory.TABLET in categories:
-        savings += 10.0
-    return savings
+def calculate_cadence_totals(cart: list[Product]) -> tuple[float, float]:
+    one_time_total = round(
+        sum(product.price for product in cart if product.category != ProductCategory.PLAN),
+        2,
+    )
+    monthly_total = round(
+        sum(product.price for product in cart if product.category == ProductCategory.PLAN),
+        2,
+    )
+    return one_time_total, monthly_total
 
 
-def calculate_totals(cart: list[Product], discount_pct: float = 0) -> tuple[float, float, float, float]:
-    subtotal = sum(p.price for p in cart)
-    bundle_savings = _estimate_bundle_savings(cart)
-    discount_amount = subtotal * (discount_pct / 100) if discount_pct else 0
-    total = max(subtotal - bundle_savings - discount_amount, 0)
-    return subtotal, bundle_savings, discount_amount, total
+def calculate_totals(cart: list[Product]) -> tuple[float, float, float, float]:
+    """Return catalog-owned totals without manufacturing an offer.
+
+    `subtotal` and `total` are retained for API compatibility. Mixed billing
+    cadences are exposed separately by `calculate_cadence_totals`.
+    """
+    subtotal = round(sum(product.price for product in cart), 2)
+    return subtotal, 0.0, 0.0, subtotal
 
 
 def complete_checkout(
@@ -35,8 +36,8 @@ def complete_checkout(
     if not cart:
         raise ValueError("Cart is empty")
 
-    discount_pct = session_store.get_recovery_discount(sid)
-    subtotal, bundle_savings, discount_amount, total = calculate_totals(cart, discount_pct)
+    subtotal, bundle_savings, discount_amount, total = calculate_totals(cart)
+    one_time_total, monthly_total = calculate_cadence_totals(cart)
 
     order_id = session_store.record_order(sid, {
         "customer_name": customer_name,
@@ -47,6 +48,8 @@ def complete_checkout(
         "savings": bundle_savings,
         "discount": discount_amount,
         "total": total,
+        "one_time_total": one_time_total,
+        "monthly_total": monthly_total,
     })
 
     items = list(cart)
@@ -61,5 +64,7 @@ def complete_checkout(
         savings=bundle_savings,
         discount=discount_amount,
         total=total,
+        one_time_total=one_time_total,
+        monthly_total=monthly_total,
         message=f"Thank you {customer_name}! Order {order_id} confirmed. A receipt was sent to {email}.",
     )

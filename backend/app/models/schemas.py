@@ -329,6 +329,8 @@ class SmartCartResponse(BaseModel):
     discount: float = 0
     total: float = 0
     estimated_savings: float = 0
+    one_time_total: float = 0
+    monthly_total: float = 0
 
 
 class BundleAddRequest(BaseModel):
@@ -352,6 +354,8 @@ class CheckoutResponse(BaseModel):
     savings: float
     discount: float = 0
     total: float
+    one_time_total: float = 0
+    monthly_total: float = 0
     message: str
 
 
@@ -378,6 +382,8 @@ class IntelligenceProfileResponse(BaseModel):
     discount: float = 0
     total: float = 0
     estimated_savings: float = 0
+    one_time_total: float = 0
+    monthly_total: float = 0
     ai_powered: bool = False
     abandonment: AbandonmentResponse | None = None
     # Pipeline visibility (Phase 1 features 2 & 3)

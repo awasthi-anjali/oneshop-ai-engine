@@ -2,12 +2,11 @@ import './AbandonmentBanner.css'
 
 interface Props {
   message: string
-  discount: number
   onCheckout: () => void
   onDismiss: () => void
 }
 
-export default function AbandonmentBanner({ message, discount, onCheckout, onDismiss }: Props) {
+export default function AbandonmentBanner({ message, onCheckout, onDismiss }: Props) {
   return (
     <div className="abandon-banner">
       <div className="abandon-content">
@@ -15,9 +14,6 @@ export default function AbandonmentBanner({ message, discount, onCheckout, onDis
         <div>
           <strong>Cart recovery</strong>
           <p>{message}</p>
-          {discount > 0 && (
-            <span className="abandon-discount">{discount}% off applied at checkout</span>
-          )}
         </div>
       </div>
       <div className="abandon-actions">

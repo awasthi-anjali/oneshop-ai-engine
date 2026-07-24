@@ -9,9 +9,8 @@ interface Props {
   aiPowered: boolean
   cartCount: number
   cartItems: Product[]
-  subtotal: number
-  discount: number
-  total: number
+  oneTimeTotal: number
+  monthlyTotal: number
   onCheckout: () => void
   onAddBundle: (productIds: string[]) => void
   onAddCrossSell: (productId: string) => void
@@ -26,15 +25,21 @@ export default function SmartCartPanel({
   aiPowered,
   cartCount,
   cartItems,
-  subtotal,
-  discount,
-  total,
+  oneTimeTotal,
+  monthlyTotal,
   onCheckout,
   onAddBundle,
   onAddCrossSell,
   onRemoveFromCart,
 }: Props) {
-  const activeBundles = bundles.filter((b) => b.savings > 0)
+  const formatBundleTotal = (bundle: BundleSuggestion) => {
+    const allMonthly = bundle.products.length > 0
+      && bundle.products.every((product) => product.category === 'plan')
+    const mixedCadence = bundle.products.some((product) => product.category === 'plan')
+      && !allMonthly
+    if (mixedCadence) return 'See item prices'
+    return `$${bundle.total_price.toFixed(0)}${allMonthly ? '/mo' : ''}`
+  }
 
   return (
     <div className="smart-cart smart-cart-scroll">
@@ -73,7 +78,7 @@ export default function SmartCartPanel({
 
           {crossSell.length > 0 && (
             <div className="cross-sell-section">
-              <h4 className="cross-sell-heading">🛍️ Frequently Bought Together</h4>
+              <h4 className="cross-sell-heading">Compatible add-ons</h4>
               {crossSell.map((item) => (
                 <div key={item.product.id} className="cross-sell-row">
                   <div className="cross-sell-info">
@@ -95,32 +100,27 @@ export default function SmartCartPanel({
             </div>
           )}
 
-          {activeBundles.map((bundle, i) => (
+          {bundles.map((bundle, i) => (
             <div key={i} className="bundle-card bundle-card-highlight">
               <div className="bundle-header">
                 <span className="bundle-name">📦 {bundle.name}</span>
-                {bundle.discount_percent ? (
-                  <span className="bundle-save">{bundle.discount_percent}% off</span>
-                ) : (
-                  <span className="bundle-save">Save ${bundle.savings.toFixed(0)}</span>
-                )}
+                <span className="bundle-save">Catalog compatible</span>
               </div>
               <p className="bundle-reason">{bundle.reason}</p>
               <div className="bundle-product-rows">
                 {bundle.products.map((p) => (
                   <div key={p.id} className="bundle-product-row">
                     <span>{p.name}</span>
-                    <span className="bundle-original-price">${p.price.toFixed(0)}</span>
+                    <span className="bundle-original-price">
+                      ${p.price.toFixed(0)}{p.category === 'plan' ? '/mo' : ''}
+                    </span>
                   </div>
                 ))}
               </div>
               <div className="bundle-footer">
                 <div className="bundle-pricing">
-                  {bundle.original_price ? (
-                    <span className="bundle-was">${bundle.original_price.toFixed(0)}</span>
-                  ) : null}
-                  <span className="bundle-total">${bundle.total_price.toFixed(0)}</span>
-                  <span className="bundle-savings-label">Save ${bundle.savings.toFixed(0)}</span>
+                  <span className="bundle-total">{formatBundleTotal(bundle)}</span>
+                  <span className="bundle-savings-label">No offer assumed</span>
                 </div>
                 <button
                   type="button"
@@ -135,21 +135,20 @@ export default function SmartCartPanel({
 
           <div className="cart-totals">
             <div className="cart-total-row">
-              <span>Subtotal ({cartCount} item{cartCount !== 1 ? 's' : ''})</span>
-              <span>${subtotal.toFixed(2)}</span>
+              <span>Cart items ({cartCount})</span>
+              <span>Catalog prices</span>
             </div>
-            {discount > 0 && (
-              <div className="cart-total-row cart-discount-row">
-                <span>Bundle Discount</span>
-                <span>-${discount.toFixed(2)}</span>
+            {oneTimeTotal > 0 && (
+              <div className="cart-total-row cart-final-row">
+                <span>Due once</span>
+                <span>${oneTimeTotal.toFixed(2)}</span>
               </div>
             )}
-            <div className="cart-total-row cart-final-row">
-              <span>Total</span>
-              <span>${total.toFixed(2)}</span>
-            </div>
-            {discount > 0 && (
-              <p className="cart-saved-msg">💰 You saved ${discount.toFixed(2)}!</p>
+            {monthlyTotal > 0 && (
+              <div className="cart-total-row cart-final-row">
+                <span>Monthly</span>
+                <span>${monthlyTotal.toFixed(2)}/month</span>
+              </div>
             )}
           </div>
 

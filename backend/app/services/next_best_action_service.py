@@ -19,7 +19,7 @@ RULE_ACTIONS: dict[str, list[tuple[str, str]]] = {
         ("complete_cart", "Move wishlist items to cart"),
     ],
     "cart": [
-        ("checkout", "Complete checkout — free shipping today"),
+        ("checkout", "Review your cart and continue checkout"),
         ("add_accessory", "Add a case or earbuds to your order"),
     ],
 }

@@ -122,7 +122,7 @@ class SessionStore:
         if not self._carts[session_id]:
             return False
         self._abandoned[session_id] = True
-        self._recovery_discount[session_id] = 10.0  # 10% recovery offer
+        self._recovery_discount[session_id] = 0.0
         return True
 
     def get_abandonment_status(self, session_id: str) -> dict:
@@ -136,14 +136,14 @@ class SessionStore:
             if elapsed >= ABANDONMENT_THRESHOLD_SEC:
                 is_abandoned = True
                 self._abandoned[session_id] = True
-                self._recovery_discount[session_id] = 10.0
-                discount = 10.0
+                self._recovery_discount[session_id] = 0.0
+                discount = 0.0
 
         recovery_message = ""
         if is_abandoned and cart:
             recovery_message = (
                 f"Welcome back! You left {len(cart)} item(s) in your cart. "
-                f"Complete checkout now for {discount:.0f}% off!"
+                "Your selections are ready when you are."
             )
 
         return {
