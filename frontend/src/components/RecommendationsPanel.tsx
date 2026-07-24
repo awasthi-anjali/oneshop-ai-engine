@@ -1,10 +1,9 @@
 import type { MouseEvent } from 'react'
-import type { BundleSuggestion, CustomerIntent, RecommendationItem } from '../api'
+import type { BundleSuggestion, RecommendationItem } from '../api'
 import SmartCartPanel from './SmartCartPanel'
 import './RecommendationsPanel.css'
 
 interface Props {
-  intent: CustomerIntent | null
   recommendations: RecommendationItem[]
   wishlistCount: number
   cartCount: number
@@ -12,8 +11,6 @@ interface Props {
   loading: boolean
   aiPowered: boolean
   recommendationPipeline?: string
-  retrievalMethod?: string
-  retrievalQuery?: string
   smartCart: {
     bundles: BundleSuggestion[]
     nudge: string
@@ -31,7 +28,6 @@ interface Props {
 }
 
 export default function RecommendationsPanel({
-  intent,
   recommendations,
   wishlistCount,
   cartCount,
@@ -39,8 +35,6 @@ export default function RecommendationsPanel({
   loading,
   aiPowered,
   recommendationPipeline,
-  retrievalMethod,
-  retrievalQuery,
   smartCart,
   onToggleWishlist,
   onAddToCart,
@@ -78,49 +72,23 @@ export default function RecommendationsPanel({
         </div>
       </div>
 
-      {retrievalMethod === 'embeddings' && (
-        <div className="rec-rag-banner">
-          <span className="rec-rag-icon">⌖</span>
-          <div>
-            <strong>Semantic search active</strong>
-            <p>Catalog focused via embeddings{retrievalQuery ? `: “${retrievalQuery.slice(0, 48)}…”` : ''}</p>
-          </div>
-        </div>
-      )}
-
       <div className="rec-stats">
-        <div className="rec-stat">
+        <div className="rec-stat rec-stat-compact">
           <span className="rec-stat-num">{viewedCount}</span>
           <span className="rec-stat-label">Viewed</span>
         </div>
-        <div className="rec-stat">
+        <div className="rec-stat rec-stat-compact">
           <span className="rec-stat-num">{wishlistCount}</span>
           <span className="rec-stat-label">Wishlist</span>
         </div>
-        <div className="rec-stat">
+        <div className="rec-stat rec-stat-cart">
           <span className="rec-stat-num">{cartCount}</span>
           <span className="rec-stat-label">Cart</span>
         </div>
       </div>
 
-      {intent && (
-        <div className="rec-intent">
-          <span className="rec-intent-label">Your intent</span>
-          <p>{intent.summary}</p>
-          {intent.ecosystem && (
-            <p className="rec-ecosystem">🏷 {intent.ecosystem}</p>
-          )}
-          {intent.tags.length > 0 && (
-            <div className="rec-tags">
-              {intent.tags.map((tag) => (
-                <span key={tag} className="rec-tag">{tag}</span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="rec-list">
+      <div className="rec-panel-body">
+        <div className="rec-list">
         {loading ? (
           <p className="rec-empty">Updating recommendations…</p>
         ) : recommendations.length === 0 ? (
@@ -157,8 +125,9 @@ export default function RecommendationsPanel({
                         className={`rec-icon-btn cart ${inCart ? 'active' : ''}`}
                         onClick={(e) => handleRecCartClick(e, product.id, inCart)}
                         title={inCart ? 'Click to remove from cart' : 'Add to cart'}
+                        aria-label={inCart ? 'Remove from cart' : 'Add to cart'}
                       >
-                        🛒
+                        <span className="rec-cart-icon" aria-hidden="true">🛒</span>
                       </button>
                     </div>
                   </div>
@@ -167,18 +136,19 @@ export default function RecommendationsPanel({
             )
           })
         )}
-      </div>
+        </div>
 
-      <SmartCartPanel
-        bundles={smartCart.bundles}
-        nudge={smartCart.nudge}
-        checkoutTip={smartCart.checkoutTip}
-        aiPowered={smartCart.aiPowered}
-        cartCount={cartCount}
-        subtotal={smartCart.subtotal}
-        onCheckout={onCheckout}
-        onAddBundle={onAddBundle}
-      />
+        <SmartCartPanel
+          bundles={smartCart.bundles}
+          nudge={smartCart.nudge}
+          checkoutTip={smartCart.checkoutTip}
+          aiPowered={smartCart.aiPowered}
+          cartCount={cartCount}
+          subtotal={smartCart.subtotal}
+          onCheckout={onCheckout}
+          onAddBundle={onAddBundle}
+        />
+      </div>
     </aside>
   )
 }

@@ -12,6 +12,9 @@ interface Props {
   onRemoveFromCart: (id: string) => void
   reason?: string
   reasonCodes?: string[]
+  compareMode?: boolean
+  isCompareSelected?: boolean
+  onToggleCompare?: (id: string) => void
 }
 
 export default function ProductShopCard({
@@ -24,6 +27,9 @@ export default function ProductShopCard({
   onRemoveFromCart,
   reason,
   reasonCodes = [],
+  compareMode = false,
+  isCompareSelected = false,
+  onToggleCompare,
 }: Props) {
   const priceLabel =
     product.category === 'plan' ? `$${product.price.toFixed(0)}/mo` : `$${product.price.toFixed(0)}`
@@ -39,9 +45,14 @@ export default function ProductShopCard({
     onToggleWishlist(product.id)
   }
 
+  const handleCompareClick = (e: MouseEvent) => {
+    e.stopPropagation()
+    onToggleCompare?.(product.id)
+  }
+
   return (
     <article
-      className="shop-card"
+      className={`shop-card ${isCompareSelected ? 'compare-selected' : ''}`}
       data-product-id={product.id}
       onClick={() => onProductClick(product)}
       onKeyDown={(event) => {
@@ -56,6 +67,17 @@ export default function ProductShopCard({
     >
       <div className="shop-card-image">
         <img src={product.image_url} alt={product.name} loading="lazy" />
+        {compareMode && (
+          <button
+            type="button"
+            className={`compare-select-btn ${isCompareSelected ? 'active' : ''}`}
+            onClick={handleCompareClick}
+            aria-label={isCompareSelected ? 'Remove from compare' : 'Add to compare'}
+            aria-pressed={isCompareSelected}
+          >
+            {isCompareSelected ? '✓' : '+'}
+          </button>
+        )}
         <button
           className={`wishlist-btn ${isWishlisted ? 'active' : ''}`}
           onClick={handleWishlistClick}

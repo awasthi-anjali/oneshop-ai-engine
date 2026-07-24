@@ -25,6 +25,10 @@ class ProductCatalog:
         return [p for pid in product_ids if (p := self._by_id.get(pid))]
 
     def search(self, req: ProductSearchRequest) -> list[Product]:
+        products, _ = self.search_with_meta(req)
+        return products
+
+    def search_with_meta(self, req: ProductSearchRequest) -> tuple[list[Product], str]:
         results = self._products
 
         if req.category:
@@ -47,13 +51,85 @@ class ProductCatalog:
                 if tag_set.intersection({t.lower() for t in p.tags})
             ]
 
+        search_method = "name"
         if req.query:
+            pool = results
             results = self._rank_by_query(results, req.query)
+            results, search_method = self._maybe_rerank_with_embeddings(results, req.query, pool)
 
-        return results[: req.limit]
+        return results[: req.limit], search_method
+
+    def _maybe_rerank_with_embeddings(
+        self,
+        name_matches: list[Product],
+        query: str,
+        candidate_pool: list[Product] | None = None,
+    ) -> tuple[list[Product], str]:
+        if not query.strip():
+            return name_matches, "name"
+
+        pool = candidate_pool if candidate_pool is not None else (name_matches or self._products)
+        pool_ids = {p.id for p in pool}
+
+        try:
+            from app.services.ai_client import get_openai_client, is_ai_enabled
+            from app.services.catalog_retrieval import (
+                EMBED_MODEL,
+                _cosine,
+                _ensure_embeddings,
+                semantic_retrieve_with_meta,
+            )
+
+            if not is_ai_enabled():
+                return name_matches or self._rank_by_query(pool, query), "name"
+
+            if name_matches:
+                match_ids = {p.id for p in name_matches}
+                retrieved_ids, meta = semantic_retrieve_with_meta(query, top_k=50)
+                method = meta.get("method", "name")
+                if method not in {"embeddings", "keyword"}:
+                    return name_matches, "name"
+
+                reranked = [
+                    self._by_id[pid]
+                    for pid in retrieved_ids
+                    if pid in match_ids and pid in self._by_id
+                ]
+                if reranked:
+                    seen = {p.id for p in reranked}
+                    for product in name_matches:
+                        if product.id not in seen:
+                            reranked.append(product)
+                    return reranked, method
+                return name_matches, "name"
+
+            embeddings = _ensure_embeddings()
+            client = get_openai_client()
+            if embeddings and client:
+                q_emb = client.embeddings.create(model=EMBED_MODEL, input=query).data[0].embedding
+                scored = [
+                    (pid, _cosine(q_emb, emb))
+                    for pid, emb in embeddings.items()
+                    if pid in pool_ids
+                ]
+                scored.sort(key=lambda x: x[1], reverse=True)
+                retrieved = [self._by_id[pid] for pid, _ in scored[:50] if pid in self._by_id]
+                if retrieved:
+                    return retrieved, "embeddings"
+
+            fallback = self._rank_by_query(pool, query)
+            if fallback:
+                return fallback, "name"
+        except Exception:
+            pass
+
+        return name_matches, "name"
 
     def _rank_by_query(self, products: list[Product], query: str) -> list[Product]:
-        query_lower = query.lower()
+        query_lower = query.lower().strip()
+        if not query_lower:
+            return products
+
         tokens = set(re.findall(r"\w+", query_lower))
 
         def score(product: Product) -> float:
@@ -66,10 +142,12 @@ class ProductCatalog:
                 product.category.value,
             ]).lower()
 
-            token_hits = sum(1 for t in tokens if t in text)
+            token_hits = sum(1 for token in tokens if token in text)
             phrase_bonus = 2.0 if query_lower in text else 0.0
             price_match = 0.0
-            price_patterns = re.findall(r"(?:under|below|less than|max|budget)\s*\$?(\d+)", query_lower)
+            price_patterns = re.findall(
+                r"(?:under|below|less than|max|budget)\s*\$?(\d+)", query_lower
+            )
             if price_patterns:
                 max_p = float(price_patterns[0])
                 if product.price <= max_p:
@@ -77,7 +155,10 @@ class ProductCatalog:
 
             return token_hits + phrase_bonus + price_match + product.rating * 0.1
 
-        return sorted(products, key=score, reverse=True)
+        scored = [(product, score(product)) for product in products]
+        scored = [(product, value) for product, value in scored if value > 0]
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return [product for product, _ in scored]
 
     def compare(self, product_ids: list[str]) -> list[Product]:
         products = self.get_by_ids(product_ids)

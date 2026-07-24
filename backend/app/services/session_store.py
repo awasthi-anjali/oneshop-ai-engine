@@ -36,7 +36,6 @@ class SessionStore:
     def _touch_cart(self, session_id: str) -> None:
         self._cart_updated_at[session_id] = time.time()
         self._abandoned[session_id] = False
-        self._recovery_discount[session_id] = 0.0
 
     def get_viewed_ids(self, session_id: str) -> list[str]:
         return list(self._viewed.get(session_id, []))

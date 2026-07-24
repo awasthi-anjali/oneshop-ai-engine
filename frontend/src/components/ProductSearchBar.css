@@ -1,0 +1,147 @@
+.product-search-wrap {
+  position: relative;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.product-search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.product-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  font-size: 1rem;
+  pointer-events: none;
+  line-height: 1;
+}
+
+.product-search-input {
+  width: 100%;
+  padding: 10px 72px 10px 36px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.875rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.product-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.product-search-input:hover {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+}
+
+.product-search-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.product-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.product-search-clear {
+  position: absolute;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+
+.product-search-clear:hover {
+  background: var(--surface-secondary);
+  color: var(--text);
+}
+
+.product-search-spinner {
+  position: absolute;
+  right: 12px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: product-search-spin 0.7s linear infinite;
+}
+
+.product-search-input:not(:placeholder-shown) {
+  padding-right: 40px;
+}
+
+@keyframes product-search-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.product-search-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.product-search-section + .product-search-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.product-search-section-title {
+  margin-bottom: 4px;
+  padding: 0 8px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.product-search-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.product-search-option:hover {
+  background: var(--surface-secondary);
+}
+
+@media (max-width: 640px) {
+  .product-search-wrap {
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-search-spinner {
+    animation: none;
+    border-top-color: var(--primary);
+  }
+}

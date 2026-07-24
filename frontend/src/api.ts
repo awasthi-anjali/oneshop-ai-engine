@@ -337,9 +337,60 @@ export function storeSessionId(id: string) {
   if (prev && prev !== id) notifySessionSync()
 }
 
-export async function fetchProducts(): Promise<Product[]> {
-  const res = await fetch(`${API_BASE}/products?limit=50`)
+export interface ProductSearchParams {
+  query?: string
+  category?: string
+  max_price?: number
+  min_price?: number
+  brand?: string
+  limit?: number
+  include_meta?: boolean
+}
+
+export type ProductSearchMethod = 'name' | 'embeddings' | 'keyword'
+
+export interface ProductSearchResult {
+  products: Product[]
+  search_method: ProductSearchMethod
+}
+
+export async function fetchProducts(params: ProductSearchParams = {}): Promise<Product[]> {
+  const result = await fetchProductsWithMeta(params)
+  return result.products
+}
+
+export async function fetchProductsWithMeta(
+  params: ProductSearchParams = {}
+): Promise<ProductSearchResult> {
+  const searchParams = new URLSearchParams()
+  searchParams.set('limit', String(params.limit ?? 50))
+  if (params.query?.trim()) searchParams.set('query', params.query.trim())
+  if (params.category) searchParams.set('category', params.category)
+  if (params.max_price != null) searchParams.set('max_price', String(params.max_price))
+  if (params.min_price != null) searchParams.set('min_price', String(params.min_price))
+  if (params.brand?.trim()) searchParams.set('brand', params.brand.trim())
+  if (params.include_meta !== false) searchParams.set('include_meta', 'true')
+
+  const res = await fetch(`${API_BASE}/products?${searchParams}`)
   if (!res.ok) throw new Error('Failed to load products')
+
+  const data = await res.json()
+  if (Array.isArray(data)) {
+    return { products: data, search_method: 'name' }
+  }
+  return {
+    products: data.products ?? [],
+    search_method: data.search_method ?? 'name',
+  }
+}
+
+export async function compareProducts(productIds: string[]): Promise<Product[]> {
+  const res = await fetch(`${API_BASE}/products/compare`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ product_ids: productIds }),
+  })
+  if (!res.ok) throw new Error('Failed to compare products')
   return res.json()
 }
 
