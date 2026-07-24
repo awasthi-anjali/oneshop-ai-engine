@@ -14,6 +14,7 @@ from app.models.schemas import (
 )
 from app.services.checkout_service import complete_checkout
 from app.services.next_best_action_service import get_next_best_actions
+from app.services.omnichannel_service import get_omnichannel_context
 from app.services.orchestrator_service import get_intelligence_profile
 from app.services.product_catalog import catalog
 from app.services.recommendation_engine import get_recommendations
@@ -24,15 +25,37 @@ from app.services.smart_cart_service import get_smart_cart
 router = APIRouter(tags=["intelligence"])
 
 
+def _touch_channel(session_id: str | None, channel: str | None) -> str:
+    sid = session_store.get_or_create(session_id)
+    if channel:
+        session_store.record_channel(sid, channel)
+    return sid
+
+
 @router.get("/api/intelligence/profile", response_model=IntelligenceProfileResponse)
 async def intelligence_profile(
     session_id: str | None = None,
+    customer_id: str | None = None,
+    channel: str = Query(default="oneshop"),
     limit: int = Query(default=6, le=12),
 ) -> IntelligenceProfileResponse:
     """Unified AI orchestrator — intent, recs, NBA, smart cart in one call."""
-    profile = get_intelligence_profile(session_id, limit=limit)
+    sid = session_store.resolve_session(session_id, customer_id)
+    profile = get_intelligence_profile(sid, limit=limit)
     abandon_data = profile.pop("abandonment", {})
-    sid = profile["session_id"]
+    omni = get_omnichannel_context(sid, channel)
+    profile.update({
+        "session_id": sid,
+        "current_channel": omni["current_channel"],
+        "last_channel": omni["last_channel"],
+        "channels_used": omni["channels_used"],
+        "is_cross_channel": omni["is_cross_channel"],
+        "other_channel": omni["other_channel"],
+        "sync_message": omni["sync_message"],
+        "customer_id": omni["customer_id"],
+        "continue_url_web": omni["continue_url_web"],
+        "continue_url_app": omni["continue_url_app"],
+    })
     return IntelligenceProfileResponse(
         **profile,
         abandonment=AbandonmentResponse(session_id=sid, **abandon_data),
@@ -87,7 +110,7 @@ async def add_bundle_to_cart(request: BundleAddRequest) -> SessionStateResponse:
     for pid in request.product_ids:
         if not catalog.get_by_id(pid):
             raise HTTPException(status_code=404, detail=f"Product not found: {pid}")
-    sid = session_store.get_or_create(request.session_id)
+    sid = _touch_channel(request.session_id, request.channel)
     session_store.add_bundle_to_cart(sid, request.product_ids)
     return session_response(sid)
 
@@ -138,7 +161,7 @@ async def get_session(session_id: str | None = None) -> SessionStateResponse:
 async def track_view(request: SessionActionRequest) -> SessionStateResponse:
     if not catalog.get_by_id(request.product_id):
         raise HTTPException(status_code=404, detail="Product not found")
-    sid = session_store.get_or_create(request.session_id)
+    sid = _touch_channel(request.session_id, request.channel)
     session_store.track_view(sid, request.product_id)
     return session_response(sid)
 
@@ -147,7 +170,7 @@ async def track_view(request: SessionActionRequest) -> SessionStateResponse:
 async def toggle_wishlist(request: SessionActionRequest) -> SessionStateResponse:
     if not catalog.get_by_id(request.product_id):
         raise HTTPException(status_code=404, detail="Product not found")
-    sid = session_store.get_or_create(request.session_id)
+    sid = _touch_channel(request.session_id, request.channel)
     session_store.toggle_wishlist(sid, request.product_id)
     return session_response(sid)
 
@@ -156,14 +179,14 @@ async def toggle_wishlist(request: SessionActionRequest) -> SessionStateResponse
 async def add_to_cart(request: SessionActionRequest) -> SessionStateResponse:
     if not catalog.get_by_id(request.product_id):
         raise HTTPException(status_code=404, detail="Product not found")
-    sid = session_store.get_or_create(request.session_id)
+    sid = _touch_channel(request.session_id, request.channel)
     session_store.add_to_cart(sid, request.product_id)
     return session_response(sid)
 
 
 @router.post("/api/customer/cart/remove", response_model=SessionStateResponse)
 async def remove_from_cart(request: SessionActionRequest) -> SessionStateResponse:
-    sid = session_store.get_or_create(request.session_id)
+    sid = _touch_channel(request.session_id, request.channel)
     session_store.remove_from_cart(sid, request.product_id)
     return session_response(sid)
 

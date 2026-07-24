@@ -27,9 +27,12 @@ export default function App() {
         <div className="header-right">
           <span className="mode-badge">{llmMode}</span>
           <span className="channel-badge">Web</span>
+          <a href="/app" className="oneapp-link" target="_blank" rel="noreferrer">
+            OneApp →
+          </a>
         </div>
       </header>
-      <ShopPage />
+      <ShopPage channel="oneshop" layout="desktop" />
     </div>
   )
 }

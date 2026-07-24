@@ -45,6 +45,14 @@ explicit confirmation before an exact bundle cart mutation.
 - ShopAssist uses a bounded recommendation path with an explicit proposal and
   confirmation boundary; chat requests cannot mutate the cart.
 
+### 6. Omnichannel Experience (OneShop Web + OneApp Mobile)
+- **OneShop Web** at `/` — desktop shopping experience with embedded ShopAssist drawer
+- **OneApp Mobile** at `/app` — mobile shell with bottom nav (Shop · Assist · Sync)
+- **Shared session** — same `session_id` = same cart, wishlist, viewed, AI recommendations
+- **Continue links** — copy or open cross-channel URLs with `?session_id=`
+- **Customer linking** — optional `customer_id` for persistent identity across devices
+- **Sync banner** — “Synced from OneApp Mobile — 2 items in your cart” when switching channels
+
 > The included OneTel/USD catalog is synthetic demo data. It is not current
 > Deutsche Telekom inventory, pricing, availability, or eligibility data.
 
@@ -135,6 +143,17 @@ curl -X POST http://localhost:8000/api/chat \
   -d '{"message": "Show me phones under $500", "channel": "oneshop"}'
 ```
 
+| GET | `/api/omnichannel/context` | Cross-channel sync status + continue URLs |
+| POST | `/api/omnichannel/link` | Link customer_id to session |
+| GET | `/api/omnichannel/continue` | URL to continue on other channel |
+
+### Omnichannel demo
+
+1. **OneShop Web:** http://localhost:5173 — add iPhone to cart
+2. Click **Sync** tab → **Copy mobile link** or **Open on OneApp Mobile**
+3. **OneApp:** http://localhost:5173/app?session_id=... — same cart appears
+4. Purple **Omnichannel sync** banner shows on both channels
+
 ## Roadmap (Remaining Capabilities)
 
 - [x] Embedded, commerce-bounded ShopAssist V1
@@ -145,7 +164,7 @@ curl -X POST http://localhost:8000/api/chat \
 - [x] Personalized Discovery prototype
 - [x] Next Best Action prototype
 - [x] Smart Cart & Checkout prototype
-- [ ] Omnichannel Experience (OneApp mobile)
+- [x] Omnichannel Experience (OneShop Web + OneApp Mobile)
 
 ## Tech Stack
 

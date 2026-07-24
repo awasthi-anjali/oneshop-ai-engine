@@ -1,0 +1,50 @@
+.omni-sync-banner {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(34, 211, 238, 0.08));
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 12px;
+}
+
+.omni-sync-icon {
+  font-size: 1.4rem;
+  color: var(--primary-hover);
+}
+
+.omni-sync-text strong {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--primary-hover);
+  margin-bottom: 4px;
+}
+
+.omni-sync-text p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.omni-channels {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.omni-ch-tag {
+  font-size: 0.65rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.omni-ch-tag.active {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: var(--primary);
+  color: var(--primary-hover);
+  font-weight: 600;
+}

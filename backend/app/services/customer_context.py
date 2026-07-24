@@ -42,6 +42,7 @@ def build_customer_context(session_id: str) -> dict:
         "cart": summarize(cart),
         "viewed_products": summarize(viewed),
         "recent_chat": chat_snippets,
+        **session_store.get_channel_info(session_id),
     }
 
 

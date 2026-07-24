@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import chat, intelligence, products
+from app.routers import chat, intelligence, omnichannel, products
+from app.services.ai_client import is_ai_enabled
 
 app = FastAPI(
     title="Omnichannel Consumer AI Engine",
@@ -22,8 +23,14 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(products.router)
 app.include_router(intelligence.router)
+app.include_router(omnichannel.router)
 
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"status": "healthy", "service": "omnichannel-ai-engine"}
+    return {
+        "status": "healthy",
+        "service": "omnichannel-ai-engine",
+        "llm_enabled": is_ai_enabled(),
+        "mode": "openai" if is_ai_enabled() else "rule-based-fallback",
+    }

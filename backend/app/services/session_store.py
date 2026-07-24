@@ -16,6 +16,11 @@ class SessionStore:
         self._abandoned: dict[str, bool] = {}
         self._recovery_discount: dict[str, float] = {}
         self._orders: dict[str, list[dict]] = {}
+        # Omnichannel: customer identity + channel tracking
+        self._customer_to_session: dict[str, str] = {}
+        self._session_to_customer: dict[str, str] = {}
+        self._last_channel: dict[str, str] = {}
+        self._channels_used: dict[str, set[str]] = {}
 
     def get_or_create(self, session_id: str | None) -> str:
         sid = session_id or str(uuid.uuid4())
@@ -31,6 +36,7 @@ class SessionStore:
     def _touch_cart(self, session_id: str) -> None:
         self._cart_updated_at[session_id] = time.time()
         self._abandoned[session_id] = False
+        self._recovery_discount[session_id] = 0.0
 
     def get_viewed_ids(self, session_id: str) -> list[str]:
         return list(self._viewed.get(session_id, []))
@@ -145,6 +151,7 @@ class SessionStore:
 
     def clear_abandonment(self, session_id: str) -> None:
         self._abandoned[session_id] = False
+        self._recovery_discount[session_id] = 0.0
 
     def get_recovery_discount(self, session_id: str) -> float:
         return self._recovery_discount.get(session_id, 0.0)
@@ -154,6 +161,97 @@ class SessionStore:
         order["order_id"] = order_id
         self._orders[session_id].append(order)
         return order_id
+
+    def record_channel(self, session_id: str, channel: str) -> None:
+        self.get_or_create(session_id)
+        ch = channel if channel in ("oneshop", "oneapp") else "oneshop"
+        self._last_channel[session_id] = ch
+        self._channels_used.setdefault(session_id, set()).add(ch)
+
+    def get_channel_info(self, session_id: str) -> dict:
+        self.get_or_create(session_id)
+        used = sorted(self._channels_used.get(session_id, set()))
+        last = self._last_channel.get(session_id, "")
+        other = next((c for c in used if c != last), None)
+        return {
+            "current_channel": last,
+            "last_channel": last,
+            "channels_used": used,
+            "is_cross_channel": len(used) > 1,
+            "other_channel": other,
+        }
+
+    def _merge_sessions(self, source: str, target: str) -> None:
+        if source == target:
+            return
+        self.get_or_create(source)
+        self.get_or_create(target)
+
+        self._carts[target] = self._carts.get(target, set()) | self._carts.get(source, set())
+        self._wishlists[target] = self._wishlists.get(target, set()) | self._wishlists.get(source, set())
+
+        merged_viewed = list(self._viewed.get(source, []))
+        for vid in self._viewed.get(target, []):
+            if vid not in merged_viewed:
+                merged_viewed.append(vid)
+        self._viewed[target] = merged_viewed[:20]
+
+        self._cart_updated_at[target] = max(
+            self._cart_updated_at.get(target, 0),
+            self._cart_updated_at.get(source, 0),
+        )
+
+        if self._abandoned.get(source):
+            self._abandoned[target] = True
+            self._recovery_discount[target] = max(
+                self._recovery_discount.get(target, 0),
+                self._recovery_discount.get(source, 0),
+            )
+
+        self._orders[target].extend(self._orders.get(source, []))
+
+        source_channels = self._channels_used.get(source, set())
+        self._channels_used.setdefault(target, set()).update(source_channels)
+
+        if source in self._last_channel:
+            if (
+                target not in self._last_channel
+                or self._cart_updated_at.get(source, 0) >= self._cart_updated_at.get(target, 0)
+            ):
+                self._last_channel[target] = self._last_channel[source]
+
+        if source in self._session_to_customer:
+            del self._session_to_customer[source]
+
+    def link_customer(self, customer_id: str, session_id: str | None = None) -> str:
+        if customer_id in self._customer_to_session:
+            existing_sid = self._customer_to_session[customer_id]
+            if session_id:
+                current_sid = self.get_or_create(session_id)
+                if current_sid != existing_sid:
+                    self._merge_sessions(current_sid, existing_sid)
+            return existing_sid
+        sid = self.get_or_create(session_id)
+        self._customer_to_session[customer_id] = sid
+        self._session_to_customer[sid] = customer_id
+        return sid
+
+    def get_customer_id(self, session_id: str) -> str | None:
+        return self._session_to_customer.get(session_id)
+
+    def resolve_session(
+        self,
+        session_id: str | None = None,
+        customer_id: str | None = None,
+    ) -> str:
+        if customer_id and customer_id in self._customer_to_session:
+            existing_sid = self._customer_to_session[customer_id]
+            if session_id:
+                current_sid = self.get_or_create(session_id)
+                if current_sid != existing_sid:
+                    self._merge_sessions(current_sid, existing_sid)
+            return existing_sid
+        return self.get_or_create(session_id)
 
 
 session_store = SessionStore()

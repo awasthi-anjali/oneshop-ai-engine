@@ -212,6 +212,7 @@ class RecommendationItem(BaseModel):
     product: Product
     score: float
     reason: str
+    source: str = "rules"  # ai | semantic_backup | rules
 
 
 class RecommendationsResponse(BaseModel):
@@ -257,6 +258,7 @@ class SmartCartResponse(BaseModel):
 class BundleAddRequest(BaseModel):
     session_id: str | None = None
     product_ids: list[str] = Field(..., min_length=1)
+    channel: str | None = None
 
 
 class CheckoutRequest(BaseModel):
@@ -299,6 +301,50 @@ class IntelligenceProfileResponse(BaseModel):
     estimated_savings: float = 0
     ai_powered: bool = False
     abandonment: AbandonmentResponse | None = None
+    # Pipeline visibility (Phase 1 features 2 & 3)
+    recommendation_pipeline: str = "rules"  # ai_validated | semantic_backup | rules
+    retrieval_method: str = "none"  # embeddings | keyword | none
+    retrieved_product_ids: list[str] = Field(default_factory=list)
+    retrieval_query: str = ""
+    # Omnichannel
+    current_channel: str = ""
+    last_channel: str = ""
+    channels_used: list[str] = Field(default_factory=list)
+    is_cross_channel: bool = False
+    other_channel: str | None = None
+    sync_message: str = ""
+    customer_id: str | None = None
+    continue_url_web: str = ""
+    continue_url_app: str = ""
+
+
+class OmnichannelLinkRequest(BaseModel):
+    customer_id: str = Field(..., min_length=2)
+    session_id: str | None = None
+
+
+class OmnichannelLinkResponse(BaseModel):
+    session_id: str
+    customer_id: str
+    message: str
+
+
+class OmnichannelContextResponse(BaseModel):
+    session_id: str
+    customer_id: str | None = None
+    current_channel: str
+    last_channel: str
+    channels_used: list[str] = Field(default_factory=list)
+    is_cross_channel: bool = False
+    other_channel: str | None = None
+    other_channel_label: str = ""
+    sync_message: str = ""
+    cart_count: int = 0
+    wishlist_count: int = 0
+    viewed_count: int = 0
+    continue_url_web: str = ""
+    continue_url_app: str = ""
+    funnel_stage: str = "new"
 
 
 class SessionStateResponse(BaseModel):
@@ -314,3 +360,4 @@ class SessionStateResponse(BaseModel):
 class SessionActionRequest(BaseModel):
     session_id: str | None = None
     product_id: str
+    channel: str | None = None

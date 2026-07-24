@@ -14,8 +14,9 @@ def validate_recommendations(
     cart: list,
     viewed_only: set[str],
     limit: int = 6,
+    source: str = "ai",
 ) -> list[RecommendationItem]:
-    """AI proposes IDs; rules validate stock and enrich with fallback scores."""
+    """AI proposes IDs; rules validate stock, exclusions, and enrich scores."""
     items: list[RecommendationItem] = []
     seen: set[str] = set()
 
@@ -27,10 +28,12 @@ def validate_recommendations(
             continue
         seen.add(pid)
         score, rule_reason = score_product(product, intent, signals, cart, viewed_only)
+        ai_reason = reasons.get(pid, "")
         items.append(RecommendationItem(
             product=product,
             score=max(score, 1.0),
-            reason=reasons.get(pid) or rule_reason,
+            reason=ai_reason or rule_reason,
+            source=source if ai_reason else "semantic_backup" if source == "semantic_backup" else source,
         ))
         if len(items) >= limit:
             break
