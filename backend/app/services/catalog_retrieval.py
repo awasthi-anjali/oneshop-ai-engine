@@ -2,8 +2,8 @@
 
 import json
 import math
+from typing import Any
 
-from app.config import settings
 from app.models.schemas import Product
 from app.services.ai_client import get_openai_client
 from app.services.product_catalog import catalog
@@ -25,7 +25,6 @@ def _product_text(product: Product) -> str:
 
 
 def catalog_compact(exclude_ids: set[str] | None = None) -> list[dict]:
-    """Minimal product list for LLM context — keeps token cost low."""
     exclude = exclude_ids or set()
     return [
         {
@@ -80,16 +79,27 @@ def _ensure_embeddings() -> dict[str, list[float]] | None:
         return None
 
 
-def semantic_retrieve(
+def is_embeddings_cached() -> bool:
+    return _embedding_cache is not None and len(_embedding_cache) > 0
+
+
+def semantic_retrieve_with_meta(
     query: str,
     top_k: int = 10,
     exclude_ids: set[str] | None = None,
-) -> list[str]:
+) -> tuple[list[str], dict[str, Any]]:
     """
-    Return product IDs most relevant to query.
-    Uses OpenAI embeddings when available; falls back to catalog keyword search.
+    Return product IDs + metadata about retrieval method.
+    embeddings = OpenAI vector search; keyword = catalog text search fallback.
     """
     exclude = exclude_ids or set()
+    meta: dict[str, Any] = {
+        "method": "none",
+        "query": query.strip(),
+        "embeddings_cached": is_embeddings_cached(),
+        "count": 0,
+    }
+
     embeddings = _ensure_embeddings()
     client = get_openai_client()
 
@@ -102,11 +112,27 @@ def semantic_retrieve(
                 if pid not in exclude
             ]
             scored.sort(key=lambda x: x[1], reverse=True)
-            return [pid for pid, _ in scored[:top_k]]
+            ids = [pid for pid, _ in scored[:top_k]]
+            meta["method"] = "embeddings"
+            meta["count"] = len(ids)
+            meta["embeddings_cached"] = True
+            return ids, meta
         except Exception:
             pass
 
     from app.models.schemas import ProductSearchRequest
 
     results = catalog.search(ProductSearchRequest(query=query, limit=top_k + len(exclude)))
-    return [p.id for p in results if p.id not in exclude][:top_k]
+    ids = [p.id for p in results if p.id not in exclude][:top_k]
+    meta["method"] = "keyword"
+    meta["count"] = len(ids)
+    return ids, meta
+
+
+def semantic_retrieve(
+    query: str,
+    top_k: int = 10,
+    exclude_ids: set[str] | None = None,
+) -> list[str]:
+    ids, _ = semantic_retrieve_with_meta(query, top_k, exclude_ids)
+    return ids

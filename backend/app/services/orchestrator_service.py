@@ -14,7 +14,7 @@ from app.models.schemas import (
     RecommendationItem,
 )
 from app.services.ai_client import get_openai_client, is_ai_enabled
-from app.services.catalog_retrieval import catalog_compact, semantic_retrieve
+from app.services.catalog_retrieval import catalog_compact, semantic_retrieve_with_meta
 from app.services.checkout_service import calculate_totals
 from app.services.customer_context import build_customer_context, get_funnel_stage
 from app.services.intent_engine import extract_intent_from_signals
@@ -143,6 +143,10 @@ def _fallback_profile(session_id: str, limit: int) -> dict:
         "estimated_savings": savings,
         "ai_powered": rec_ai or nba_ai or cart_ai,
         "abandonment": abandon,
+        "recommendation_pipeline": "rules",
+        "retrieval_method": "none",
+        "retrieved_product_ids": [],
+        "retrieval_query": "",
     }
 
 
@@ -163,7 +167,9 @@ def _ai_orchestrate(session_id: str, limit: int) -> dict | None:
     retrieval_query = _build_retrieval_query(context, chat_snippets)
 
     # RAG-lite: semantic retrieve narrows catalog focus for the LLM
-    retrieved_ids = semantic_retrieve(retrieval_query, top_k=12, exclude_ids=exclude)
+    retrieved_ids, retrieval_meta = semantic_retrieve_with_meta(
+        retrieval_query, top_k=12, exclude_ids=exclude
+    )
     if retrieved_ids:
         catalog_slice = [
             item for item in catalog_compact(exclude_ids=exclude)
@@ -223,23 +229,31 @@ def _ai_orchestrate(session_id: str, limit: int) -> dict | None:
     viewed_ids = set(session_store.get_viewed_ids(session_id))
     wishlist_ids = set(session_store.get_wishlist_ids(session_id))
     viewed_only = viewed_ids - {p.id for p in cart} - wishlist_ids
+    recommendation_pipeline = "rules"
 
     if not signals:
         popular = sorted(catalog.all, key=lambda p: p.rating, reverse=True)
         recommendations = [
-            RecommendationItem(product=p, score=p.rating, reason="Top rated in catalog")
+            RecommendationItem(
+                product=p, score=p.rating, reason="Top rated in catalog", source="rules"
+            )
             for p in popular[:limit]
         ]
     else:
         recommendations = validate_recommendations(
-            rec_ids, rec_reasons, exclude, signals, intent, cart, viewed_only, limit
+            rec_ids, rec_reasons, exclude, signals, intent, cart, viewed_only, limit, source="ai"
         )
-        if not recommendations:
-            # AI returned invalid IDs — semantic retrieve + validate as backup
-            backup_ids = semantic_retrieve(retrieval_query, top_k=limit + 4, exclude_ids=exclude)
-            recommendations = validate_recommendations(
-                backup_ids, {}, exclude, signals, intent, cart, viewed_only, limit
+        if recommendations:
+            recommendation_pipeline = "ai_validated"
+        else:
+            backup_ids, _ = semantic_retrieve_with_meta(
+                retrieval_query, top_k=limit + 4, exclude_ids=exclude
             )
+            recommendations = validate_recommendations(
+                backup_ids, {}, exclude, signals, intent, cart, viewed_only,
+                limit, source="semantic_backup",
+            )
+            recommendation_pipeline = "semantic_backup" if recommendations else "rules"
 
     # Next actions
     raw_actions = data.get("next_actions", [])
@@ -281,6 +295,10 @@ def _ai_orchestrate(session_id: str, limit: int) -> dict | None:
         "estimated_savings": estimated_savings,
         "ai_powered": True,
         "abandonment": abandon,
+        "recommendation_pipeline": recommendation_pipeline,
+        "retrieval_method": retrieval_meta.get("method", "none"),
+        "retrieved_product_ids": retrieved_ids,
+        "retrieval_query": retrieval_query,
     }
 
 

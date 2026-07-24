@@ -20,21 +20,36 @@ interface Props {
   initialMessage?: string | null
   onConsumed?: () => void
   onOpenCheckout?: () => void
+  onCartUpdated?: () => void
+  channel?: import('../api').Channel
 }
 
-export default function ChatPage({ initialMessage, onConsumed, onOpenCheckout }: Props) {
+export default function ChatPage({
+  initialMessage,
+  onConsumed,
+  onOpenCheckout,
+  onCartUpdated,
+  channel = 'oneshop',
+}: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(getStoredSessionId())
   const [suggestions, setSuggestions] = useState<string[]>(STARTERS)
+  const [actionBanner, setActionBanner] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const initialSent = useRef(false)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+  }, [messages, loading, actionBanner])
+
+  useEffect(() => {
+    if (!actionBanner) return
+    const t = setTimeout(() => setActionBanner(null), 6000)
+    return () => clearTimeout(t)
+  }, [actionBanner])
 
   const handleSend = useCallback(
     async (text?: string) => {
@@ -42,12 +57,13 @@ export default function ChatPage({ initialMessage, onConsumed, onOpenCheckout }:
       if (!msg || loading) return
 
       setInput('')
+      setActionBanner(null)
       setMessages((prev) => [...prev, { role: 'user', content: msg }])
       setLoading(true)
       setSuggestions([])
 
       try {
-        const res = await sendMessage(msg, sessionId)
+        const res = await sendMessage(msg, sessionId, channel)
         setSessionId(res.session_id)
         setMessages((prev) => [
           ...prev,
@@ -59,7 +75,15 @@ export default function ChatPage({ initialMessage, onConsumed, onOpenCheckout }:
           },
         ])
         setSuggestions(res.suggested_actions.length > 0 ? res.suggested_actions : STARTERS)
-        if (res.open_checkout) onOpenCheckout?.()
+
+        if (res.cart_updated) {
+          setActionBanner('Cart updated — switch to Shop tab to see your items and AI recommendations.')
+          onCartUpdated?.()
+        }
+        if (res.open_checkout) {
+          setActionBanner('Opening checkout on Shop tab…')
+          onOpenCheckout?.()
+        }
       } catch {
         setMessages((prev) => [
           ...prev,
@@ -74,7 +98,7 @@ export default function ChatPage({ initialMessage, onConsumed, onOpenCheckout }:
         inputRef.current?.focus()
       }
     },
-    [input, loading, sessionId, onOpenCheckout]
+    [input, loading, sessionId, onOpenCheckout, onCartUpdated, channel]
   )
 
   useEffect(() => {
@@ -94,6 +118,12 @@ export default function ChatPage({ initialMessage, onConsumed, onOpenCheckout }:
 
   return (
     <main className="chat-container">
+      {actionBanner && (
+        <div className="chat-action-banner">
+          <span>✓</span> {actionBanner}
+        </div>
+      )}
+
       <div className="messages">
         {messages.map((msg, i) => (
           <MessageBubble key={i} message={msg} />
@@ -131,7 +161,7 @@ export default function ChatPage({ initialMessage, onConsumed, onOpenCheckout }:
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask me anything — discover, compare, or select products…"
+          placeholder="Ask me anything — discover, compare, add to cart, or checkout…"
           rows={1}
           disabled={loading}
         />

@@ -176,9 +176,15 @@ def _execute_tool(
 
     if name == "search_products":
         category = arguments.get("category")
+        cat_enum = None
+        if category:
+            try:
+                cat_enum = ProductCategory(category)
+            except ValueError:
+                return json.dumps({"error": f"Invalid category: {category}"}), [], None, flags
         req = ProductSearchRequest(
             query=arguments.get("query", ""),
-            category=ProductCategory(category) if category else None,
+            category=cat_enum,
             max_price=arguments.get("max_price"),
             min_price=arguments.get("min_price"),
             brand=arguments.get("brand"),
@@ -200,7 +206,10 @@ def _execute_tool(
         return product.model_dump_json(), products, None, flags
 
     if name == "compare_products":
-        comparison = catalog.compare(arguments["product_ids"])
+        product_ids = arguments.get("product_ids", [])
+        comparison = catalog.compare(product_ids)
+        if len(comparison) < 2:
+            return json.dumps({"error": "Need at least 2 valid product IDs to compare"}), [], None, flags
         payload = [p.model_dump() for p in comparison]
         return json.dumps(payload), comparison, comparison, flags
 
@@ -309,8 +318,8 @@ class ConversationalAssistant:
 
         if self._client:
             return await self._chat_with_llm(sid, history)
-        msg, chat_msg, suggested, _, _ = self._chat_fallback(sid, history, message)
-        return msg, chat_msg, suggested, False, False
+        msg, chat_msg, suggested, cart_updated, open_checkout = self._chat_fallback(sid, history, message)
+        return msg, chat_msg, suggested, cart_updated, open_checkout
 
     async def _chat_with_llm(
         self,
@@ -342,12 +351,34 @@ class ConversationalAssistant:
             if assistant_msg.tool_calls:
                 llm_history.append(assistant_msg.model_dump(exclude_none=True))
                 for tool_call in assistant_msg.tool_calls:
-                    args = json.loads(tool_call.function.arguments)
-                    result, products, comp, flags = _execute_tool(
-                        tool_call.function.name, args, session_id
-                    )
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except json.JSONDecodeError:
+                        llm_history.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": json.dumps({"error": "Invalid tool arguments"}),
+                        })
+                        continue
+
+                    try:
+                        result, products, comp, flags = _execute_tool(
+                            tool_call.function.name, args, session_id
+                        )
+                    except (ValueError, KeyError) as exc:
+                        llm_history.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": json.dumps({"error": str(exc)}),
+                        })
+                        continue
+
                     if products:
-                        all_products = products
+                        seen = {p.id for p in all_products}
+                        for product in products:
+                            if product.id not in seen:
+                                all_products.append(product)
+                                seen.add(product.id)
                     if comp:
                         comparison = comp
                     if flags.get("cart_updated"):
@@ -386,6 +417,49 @@ class ConversationalAssistant:
         products: list[Product] = []
         comparison: list[Product] | None = None
         content = ""
+        cart_updated = False
+        open_checkout = False
+
+        # Fallback agentic actions (when LLM unavailable)
+        if any(w in msg_lower for w in ["checkout", "pay now", "complete order", "ready to checkout"]):
+            _, cart_products, _, flags = _execute_tool("prepare_checkout", {}, session_id)
+            if flags.get("open_checkout"):
+                open_checkout = True
+                products = cart_products
+                total = sum(p.price for p in cart_products)
+                content = (
+                    f"Checkout is ready with **{len(cart_products)} item(s)** "
+                    f"(subtotal ${total:.0f}). Switching you to Shop to complete payment."
+                )
+            else:
+                content = "Your cart is empty. Add products first, then ask me to checkout."
+
+        elif "add" in msg_lower and "cart" in msg_lower:
+            found = catalog.search(ProductSearchRequest(query=message, limit=3))
+            if found:
+                target = found[0]
+                _, cart_products, _, flags = _execute_tool(
+                    "add_to_cart", {"product_id": target.id}, session_id
+                )
+                if flags.get("cart_updated"):
+                    cart_updated = True
+                    products = cart_products
+                    content = f"Added **{target.name}** to your cart (${target.price:.0f})."
+                else:
+                    content = f"I couldn't add {target.name}. Please try again."
+            else:
+                content = "I couldn't find that product. Try being more specific, e.g. 'Add iPhone 15 Pro to my cart'."
+
+        if content:
+            history.append({"role": "assistant", "content": content})
+            suggested = self._suggest_actions(content, products, comparison, cart_updated)
+            chat_msg = ChatMessage(
+                role="assistant",
+                content=content,
+                products=products[:5],
+                comparison=comparison,
+            )
+            return session_id, chat_msg, suggested, cart_updated, open_checkout
 
         if any(w in msg_lower for w in ["compare", "vs", "versus", "difference"]):
             ids = self._extract_product_ids(msg_lower)

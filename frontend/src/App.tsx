@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react'
-import { getHealth } from './api'
+import { getHealth, setChannel, type Channel } from './api'
 import ChatPage from './pages/ChatPage'
 import ShopPage from './pages/ShopPage'
+import OmnichannelPanel from './components/OmnichannelPanel'
 import './App.css'
 
-type Tab = 'shop' | 'chat'
+type Tab = 'shop' | 'chat' | 'sync'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('shop')
   const [llmMode, setLlmMode] = useState<string>('checking…')
   const [chatBootstrap, setChatBootstrap] = useState<string | null>(null)
   const [openCheckout, setOpenCheckout] = useState(false)
+  const [shopRefreshKey, setShopRefreshKey] = useState(0)
+  const channel: Channel = 'oneshop'
+
+  useEffect(() => {
+    setChannel('oneshop')
+  }, [])
 
   useEffect(() => {
     getHealth()
@@ -47,29 +54,48 @@ export default function App() {
             >
               ShopAssist
             </button>
+            <button
+              className={`nav-tab ${tab === 'sync' ? 'active' : ''}`}
+              onClick={() => setTab('sync')}
+            >
+              Sync
+            </button>
           </nav>
         </div>
         <div className="header-right">
           <span className="mode-badge">{llmMode}</span>
           <span className="channel-badge">Web</span>
+          <a href="/app" className="oneapp-link" target="_blank" rel="noreferrer">
+            OneApp →
+          </a>
         </div>
       </header>
 
       {tab === 'shop' ? (
         <ShopPage
+          channel={channel}
+          layout="desktop"
           onAskAssistant={handleAskAssistant}
           openCheckout={openCheckout}
           onCheckoutOpened={() => setOpenCheckout(false)}
+          refreshKey={shopRefreshKey}
         />
-      ) : (
+      ) : tab === 'chat' ? (
         <ChatPage
+          channel={channel}
           initialMessage={chatBootstrap}
           onConsumed={() => setChatBootstrap(null)}
+          onCartUpdated={() => setShopRefreshKey((k) => k + 1)}
           onOpenCheckout={() => {
             setOpenCheckout(true)
+            setShopRefreshKey((k) => k + 1)
             setTab('shop')
           }}
         />
+      ) : (
+        <div className="sync-page">
+          <OmnichannelPanel channel={channel} />
+        </div>
       )}
     </div>
   )

@@ -7,6 +7,7 @@ import {
   getIntelligenceProfile,
   getSession,
   getStoredSessionId,
+  ensureSessionId,
   removeFromCart,
   toggleWishlist,
   trackProductView,
@@ -17,25 +18,38 @@ import {
   type NextBestAction,
   type Product,
   type RecommendationItem,
+  type Channel,
 } from '../api'
 import AbandonmentBanner from '../components/AbandonmentBanner'
 import CheckoutModal from '../components/CheckoutModal'
 import NextBestActionBanner from '../components/NextBestActionBanner'
+import OmnichannelSyncBanner from '../components/OmnichannelSyncBanner'
 import ProductDetailModal from '../components/ProductDetailModal'
 import ProductShopCard from '../components/ProductShopCard'
 import RecommendationsPanel from '../components/RecommendationsPanel'
 import { useCartAbandonmentTracking } from '../hooks/useCartAbandonment'
+import { useCrossTabSync } from '../hooks/useCrossTabSync'
 import './ShopPage.css'
 
 interface Props {
+  channel?: Channel
+  layout?: 'desktop' | 'mobile'
   onAskAssistant?: (message: string) => void
   openCheckout?: boolean
   onCheckoutOpened?: () => void
+  refreshKey?: number
 }
 
-export default function ShopPage({ onAskAssistant, openCheckout, onCheckoutOpened }: Props) {
+export default function ShopPage({
+  channel = 'oneshop',
+  layout = 'desktop',
+  onAskAssistant,
+  openCheckout,
+  onCheckoutOpened,
+  refreshKey = 0,
+}: Props) {
   const [products, setProducts] = useState<Product[]>([])
-  const [sessionId, setSessionId] = useState<string | null>(getStoredSessionId())
+  const [sessionId, setSessionId] = useState<string | null>(() => ensureSessionId())
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set())
   const [cartIds, setCartIds] = useState<Set<string>>(new Set())
   const [viewedIds, setViewedIds] = useState<Set<string>>(new Set())
@@ -60,6 +74,11 @@ export default function ShopPage({ onAskAssistant, openCheckout, onCheckoutOpene
   const [loading, setLoading] = useState(true)
   const [recLoading, setRecLoading] = useState(false)
   const [filter, setFilter] = useState<string>('all')
+  const [recommendationPipeline, setRecommendationPipeline] = useState<string>('rules')
+  const [retrievalMethod, setRetrievalMethod] = useState<string>('none')
+  const [retrievalQuery, setRetrievalQuery] = useState<string>('')
+  const [syncMessage, setSyncMessage] = useState('')
+  const [channelsUsed, setChannelsUsed] = useState<string[]>([])
 
   useCartAbandonmentTracking(cartIds.size, sessionId)
 
@@ -80,7 +99,7 @@ export default function ShopPage({ onAskAssistant, openCheckout, onCheckoutOpene
   const refreshIntelligence = useCallback(async (sid: string | null) => {
     setRecLoading(true)
     try {
-      const profile = await getIntelligenceProfile(sid)
+      const profile = await getIntelligenceProfile(sid, channel)
       setSessionId(profile.session_id)
       setRecommendations(profile.recommendations)
       setIntent(profile.intent)
@@ -89,6 +108,12 @@ export default function ShopPage({ onAskAssistant, openCheckout, onCheckoutOpene
       setNbaStage(profile.funnel_stage)
       setNbaAi(profile.ai_powered)
       setCartProducts(profile.cart)
+      setCartIds(new Set(profile.cart.map((p) => p.id)))
+      setRecommendationPipeline(profile.recommendation_pipeline || 'rules')
+      setRetrievalMethod(profile.retrieval_method || 'none')
+      setRetrievalQuery(profile.retrieval_query || '')
+      setSyncMessage(profile.sync_message || '')
+      setChannelsUsed(profile.channels_used || [])
       setSmartCart({
         bundles: profile.bundles,
         nudge: profile.nudge,
@@ -101,7 +126,16 @@ export default function ShopPage({ onAskAssistant, openCheckout, onCheckoutOpene
     } finally {
       setRecLoading(false)
     }
-  }, [])
+  }, [channel])
+
+  const reloadFromServer = useCallback(async () => {
+    const sid = getStoredSessionId() || ensureSessionId()
+    const session = await getSession(sid)
+    applySession({ ...session, cart: session.cart })
+    await refreshIntelligence(session.session_id)
+  }, [refreshIntelligence])
+
+  useCrossTabSync(reloadFromServer)
 
   useEffect(() => {
     if (openCheckout) {
@@ -109,6 +143,15 @@ export default function ShopPage({ onAskAssistant, openCheckout, onCheckoutOpene
       onCheckoutOpened?.()
     }
   }, [openCheckout, onCheckoutOpened])
+
+  useEffect(() => {
+    if (refreshKey > 0) {
+      getSession(sessionId).then((session) => {
+        applySession({ ...session, cart: session.cart })
+        return refreshIntelligence(session.session_id)
+      })
+    }
+  }, [refreshKey, sessionId, refreshIntelligence])
 
   useEffect(() => {
     async function init() {
@@ -129,31 +172,31 @@ export default function ShopPage({ onAskAssistant, openCheckout, onCheckoutOpene
 
   const handleProductClick = async (product: Product) => {
     setSelectedProduct(product)
-    const session = await trackProductView(product.id, sessionId)
+    const session = await trackProductView(product.id, sessionId, channel)
     applySession({ ...session, cart: session.cart })
     await refreshIntelligence(session.session_id)
   }
 
   const handleToggleWishlist = async (productId: string) => {
-    const session = await toggleWishlist(productId, sessionId)
+    const session = await toggleWishlist(productId, sessionId, channel)
     applySession({ ...session, cart: session.cart })
     await refreshIntelligence(session.session_id)
   }
 
   const handleAddToCart = async (productId: string) => {
-    const session = await addToCart(productId, sessionId)
+    const session = await addToCart(productId, sessionId, channel)
     applySession({ ...session, cart: session.cart })
     await refreshIntelligence(session.session_id)
   }
 
   const handleRemoveFromCart = async (productId: string) => {
-    const session = await removeFromCart(productId, sessionId)
+    const session = await removeFromCart(productId, sessionId, channel)
     applySession({ ...session, cart: session.cart })
     await refreshIntelligence(session.session_id)
   }
 
   const handleAddBundle = async (productIds: string[]) => {
-    const session = await addBundleToCart(productIds, sessionId)
+    const session = await addBundleToCart(productIds, sessionId, channel)
     applySession({ ...session, cart: session.cart })
     await refreshIntelligence(session.session_id)
   }
@@ -188,8 +231,14 @@ export default function ShopPage({ onAskAssistant, openCheckout, onCheckoutOpene
 
   return (
     <>
-      <div className="shop-layout">
+      <div className={`shop-layout ${layout}`}>
         <section className="shop-main">
+          <OmnichannelSyncBanner
+            message={syncMessage}
+            channelsUsed={channelsUsed}
+            currentChannel={channel}
+          />
+
           {abandonment?.is_abandoned && (
             <AbandonmentBanner
               message={abandonment.recovery_message}
@@ -245,6 +294,9 @@ export default function ShopPage({ onAskAssistant, openCheckout, onCheckoutOpene
           viewedCount={viewedIds.size}
           loading={recLoading}
           aiPowered={aiPowered}
+          recommendationPipeline={recommendationPipeline}
+          retrievalMethod={retrievalMethod}
+          retrievalQuery={retrievalQuery}
           smartCart={smartCart}
           onToggleWishlist={handleToggleWishlist}
           onAddToCart={handleAddToCart}

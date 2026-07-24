@@ -11,6 +11,9 @@ interface Props {
   viewedCount: number
   loading: boolean
   aiPowered: boolean
+  recommendationPipeline?: string
+  retrievalMethod?: string
+  retrievalQuery?: string
   smartCart: {
     bundles: BundleSuggestion[]
     nudge: string
@@ -35,6 +38,9 @@ export default function RecommendationsPanel({
   viewedCount,
   loading,
   aiPowered,
+  recommendationPipeline,
+  retrievalMethod,
+  retrievalQuery,
   smartCart,
   onToggleWishlist,
   onAddToCart,
@@ -50,15 +56,37 @@ export default function RecommendationsPanel({
     else onAddToCart(productId)
   }
 
+  const sourceLabel = (source?: string) => {
+    if (source === 'ai') return 'AI pick'
+    if (source === 'semantic_backup') return 'Semantic match'
+    return 'Rule-based'
+  }
+
   return (
     <aside className="rec-panel">
       <div className="rec-panel-header">
         <h2>For You</h2>
         <div className="rec-header-badges">
           {aiPowered && <span className="rec-ai-badge">AI Powered</span>}
+          {recommendationPipeline === 'ai_validated' && (
+            <span className="rec-pipeline-badge ai">AI validated</span>
+          )}
+          {recommendationPipeline === 'semantic_backup' && (
+            <span className="rec-pipeline-badge semantic">Semantic backup</span>
+          )}
           <p className="rec-subtitle">Personalized Discovery</p>
         </div>
       </div>
+
+      {retrievalMethod === 'embeddings' && (
+        <div className="rec-rag-banner">
+          <span className="rec-rag-icon">⌖</span>
+          <div>
+            <strong>Semantic search active</strong>
+            <p>Catalog focused via embeddings{retrievalQuery ? `: “${retrievalQuery.slice(0, 48)}…”` : ''}</p>
+          </div>
+        </div>
+      )}
 
       <div className="rec-stats">
         <div className="rec-stat">
@@ -100,7 +128,7 @@ export default function RecommendationsPanel({
             Click products to view, ♡ wishlist, or 🛒 add to cart for AI recommendations
           </p>
         ) : (
-          recommendations.map(({ product, reason }) => {
+          recommendations.map(({ product, reason, source }) => {
             const priceLabel =
               product.category === 'plan'
                 ? `$${product.price.toFixed(0)}/mo`
@@ -113,6 +141,7 @@ export default function RecommendationsPanel({
                 <div className="rec-item-info">
                   <span className="rec-item-brand">{product.brand}</span>
                   <h4 className="rec-item-name">{product.name}</h4>
+                  <span className={`rec-item-source ${source || 'rules'}`}>{sourceLabel(source)}</span>
                   <span className="rec-item-reason">{reason}</span>
                   <div className="rec-item-footer">
                     <span className="rec-item-price">{priceLabel}</span>

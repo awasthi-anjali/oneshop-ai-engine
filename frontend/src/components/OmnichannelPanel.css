@@ -1,0 +1,138 @@
+.omni-panel {
+  padding: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.omni-panel h3 {
+  font-size: 1.1rem;
+  margin-bottom: 8px;
+}
+
+.omni-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.omni-loading {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+}
+
+.omni-status.ok {
+  padding: 10px 12px;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  margin-bottom: 14px;
+}
+
+.omni-stats {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.omni-stats div {
+  flex: 1;
+  text-align: center;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.omni-stats span {
+  display: block;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--primary-hover);
+}
+
+.omni-label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.omni-active {
+  margin-bottom: 14px;
+}
+
+.omni-pill {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  margin-right: 6px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.omni-pill.here {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.omni-session {
+  margin-bottom: 16px;
+}
+
+.omni-session code {
+  font-size: 0.78rem;
+  background: var(--bg);
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.omni-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.omni-btn {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.omni-btn.primary {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  font-weight: 600;
+}
+
+.omni-link-row {
+  display: flex;
+  gap: 8px;
+}
+
+.omni-link-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 0.85rem;
+}
+
+.omni-linked {
+  font-size: 0.78rem;
+  margin-top: 8px;
+  color: var(--success);
+}
