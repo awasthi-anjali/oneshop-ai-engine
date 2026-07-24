@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ProductCategory(str, Enum):
@@ -25,6 +25,14 @@ class Product(BaseModel):
     rating: float = 4.0
     in_stock: bool = True
     tags: list[str] = Field(default_factory=list)
+    currency: str = "USD"
+    billing_period: str = "one_time"
+
+    @model_validator(mode="after")
+    def set_billing_period(self) -> "Product":
+        if self.category == ProductCategory.PLAN:
+            self.billing_period = "monthly"
+        return self
 
 
 class ChatMessage(BaseModel):
@@ -34,15 +42,140 @@ class ChatMessage(BaseModel):
     comparison: list[Product] | None = None
 
 
+class ChatChannel(str, Enum):
+    ONESHOP = "oneshop"
+    ONEAPP = "oneapp"
+
+
+class PageSurface(str, Enum):
+    CATALOG = "catalog"
+    PRODUCT = "product"
+    CART = "cart"
+
+
+class EntryPoint(str, Enum):
+    HELP_ME_CHOOSE = "help_me_choose"
+    PRODUCT_DETAIL = "product_detail"
+    NEXT_BEST_ACTION = "next_best_action"
+    CART = "cart"
+
+
+class PageContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    surface: PageSurface
+    entry_point: EntryPoint
+    product_id: str | None = None
+    visible_product_ids: list[str] = Field(default_factory=list, max_length=20)
+
+
 class ChatRequest(BaseModel):
-    message: str
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(..., min_length=1, max_length=1000)
     session_id: str | None = None
-    channel: str = "oneshop"  # oneshop | oneapp
+    channel: ChatChannel = ChatChannel.ONESHOP
+    page_context: PageContext | None = None
+
+    @field_validator("message")
+    @classmethod
+    def reject_blank_message(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("message must not be blank")
+        return value
+
+
+class NeedProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    categories: list[str] = Field(default_factory=list, max_length=2)
+    use_cases: list[str] = Field(default_factory=list, max_length=8)
+    device_budget_max: float | None = Field(default=None, ge=0)
+    monthly_budget_max: float | None = Field(default=None, ge=0)
+    platform: str | None = None
+    roaming_required: bool | None = None
+    lines: int | None = Field(default=None, ge=1)
+    must_haves: list[str] = Field(default_factory=list, max_length=8)
+    nice_to_haves: list[str] = Field(default_factory=list, max_length=8)
+
+    @field_validator("categories")
+    @classmethod
+    def validate_categories(cls, values: list[str]) -> list[str]:
+        if any(value not in {"phone", "plan"} for value in values):
+            raise ValueError("unsupported ShopAssist category")
+        return values
+
+    @field_validator("platform")
+    @classmethod
+    def validate_platform(cls, value: str | None) -> str | None:
+        if value is not None and value not in {"android", "ios"}:
+            raise ValueError("platform must be android or ios")
+        return value
+
+
+class RecommendationSlot(str, Enum):
+    PRIMARY_PHONE = "primary_phone"
+    ALTERNATIVE_PHONE = "alternative_phone"
+    RECOMMENDED_PLAN = "recommended_plan"
+
+
+class ReasonCode(str, Enum):
+    WITHIN_DEVICE_BUDGET = "WITHIN_DEVICE_BUDGET"
+    WITHIN_MONTHLY_BUDGET = "WITHIN_MONTHLY_BUDGET"
+    CAMERA_MATCH = "CAMERA_MATCH"
+    ROAMING_MATCH = "ROAMING_MATCH"
+    DATA_MATCH = "DATA_MATCH"
+    PLATFORM_MATCH = "PLATFORM_MATCH"
+    COMPACT_MATCH = "COMPACT_MATCH"
+    FAST_CHARGING_MATCH = "FAST_CHARGING_MATCH"
+    FAMILY_LINES_MATCH = "FAMILY_LINES_MATCH"
+    PRODUCT_CONTEXT_MATCH = "PRODUCT_CONTEXT_MATCH"
+
+
+class ShopAssistRecommendation(BaseModel):
+    product: Product
+    slot: RecommendationSlot
+    reason_codes: list[ReasonCode] = Field(default_factory=list)
+    reason: str
+
+
+class ShopAssistActionType(str, Enum):
+    REFINE = "REFINE"
+    COMPARE = "COMPARE"
+    OPEN_PRODUCT = "OPEN_PRODUCT"
+    PROPOSE_ADD_BUNDLE = "PROPOSE_ADD_BUNDLE"
+    HANDOFF_SERVICE = "HANDOFF_SERVICE"
+
+
+class ShopAssistAction(BaseModel):
+    type: ShopAssistActionType
+    label: str
+    product_ids: list[str] = Field(default_factory=list)
+
+
+class ChatStatus(str, Enum):
+    CLARIFYING = "clarifying"
+    RECOMMENDED = "recommended"
+    NO_MATCH = "no_match"
+    UNSUPPORTED = "unsupported"
+    SERVICE_HANDOFF = "service_handoff"
+    ERROR = "error"
+
+
+class ChatMode(str, Enum):
+    AI = "ai"
+    FALLBACK = "fallback"
 
 
 class ChatResponse(BaseModel):
     session_id: str
-    message: ChatMessage
+    status: ChatStatus
+    message: str
+    need_profile: NeedProfile = Field(default_factory=NeedProfile)
+    recommendations: list[ShopAssistRecommendation] = Field(default_factory=list, max_length=3)
+    comparison: list[Product] | None = None
+    actions: list[ShopAssistAction] = Field(default_factory=list)
+    mode: ChatMode = ChatMode.FALLBACK
     suggested_actions: list[str] = Field(default_factory=list)
     cart_updated: bool = False
     open_checkout: bool = False

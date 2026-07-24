@@ -1,6 +1,6 @@
 .nba-banner {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(34, 211, 238, 0.08));
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  background: linear-gradient(135deg, var(--primary-soft), var(--surface-secondary));
+  border: 1px solid var(--primary-border);
   border-radius: var(--radius);
   padding: 14px 16px;
   margin-bottom: 16px;

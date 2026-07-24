@@ -10,6 +10,8 @@ interface Props {
   onToggleWishlist: (id: string) => void
   onAddToCart: (id: string) => void
   onRemoveFromCart: (id: string) => void
+  reason?: string
+  reasonCodes?: string[]
 }
 
 export default function ProductShopCard({
@@ -20,6 +22,8 @@ export default function ProductShopCard({
   onToggleWishlist,
   onAddToCart,
   onRemoveFromCart,
+  reason,
+  reasonCodes = [],
 }: Props) {
   const priceLabel =
     product.category === 'plan' ? `$${product.price.toFixed(0)}/mo` : `$${product.price.toFixed(0)}`
@@ -36,7 +40,20 @@ export default function ProductShopCard({
   }
 
   return (
-    <article className="shop-card" onClick={() => onProductClick(product)}>
+    <article
+      className="shop-card"
+      data-product-id={product.id}
+      onClick={() => onProductClick(product)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onProductClick(product)
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`View details for ${product.name}`}
+    >
       <div className="shop-card-image">
         <img src={product.image_url} alt={product.name} loading="lazy" />
         <button
@@ -54,6 +71,15 @@ export default function ProductShopCard({
         <span className="shop-card-brand">{product.brand}</span>
         <h3 className="shop-card-name">{product.name}</h3>
         <p className="shop-card-desc">{product.description.slice(0, 100)}…</p>
+
+        {reason && <p className="shopassist-reason">{reason}</p>}
+        {reasonCodes.length > 0 && (
+          <div className="reason-badges" aria-label="Why this matches">
+            {reasonCodes.map((code) => (
+              <span key={code}>{code.replace(/_/g, ' ').toLowerCase()}</span>
+            ))}
+          </div>
+        )}
 
         <div className="shop-card-meta">
           <span className="shop-card-price">{priceLabel}</span>

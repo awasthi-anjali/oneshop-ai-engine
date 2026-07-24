@@ -22,7 +22,7 @@
 .product-image {
   position: relative;
   height: 140px;
-  background: #12151f;
+  background: var(--surface-secondary);
   overflow: hidden;
 }
 
@@ -82,7 +82,7 @@
 
 .product-rating {
   font-size: 0.8rem;
-  color: #fbbf24;
+  color: var(--warning);
 }
 
 .product-features {

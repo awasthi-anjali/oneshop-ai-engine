@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { Product } from '../api'
 import './ProductDetailModal.css'
 
@@ -9,6 +10,7 @@ interface Props {
   onToggleWishlist: (id: string) => void
   onAddToCart: (id: string) => void
   onRemoveFromCart: (id: string) => void
+  onAskShopAssist?: (product: Product, source: HTMLButtonElement) => void
 }
 
 export default function ProductDetailModal({
@@ -19,7 +21,17 @@ export default function ProductDetailModal({
   onToggleWishlist,
   onAddToCart,
   onRemoveFromCart,
+  onAskShopAssist,
 }: Props) {
+  useEffect(() => {
+    if (!product) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [onClose, product])
+
   if (!product) return null
 
   const priceLabel =
@@ -32,7 +44,13 @@ export default function ProductDetailModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-content"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-detail-title"
+      >
         <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
 
         <div className="modal-grid">
@@ -43,7 +61,7 @@ export default function ProductDetailModal({
 
           <div className="modal-info">
             <span className="modal-brand">{product.brand}</span>
-            <h2>{product.name}</h2>
+            <h2 id="product-detail-title">{product.name}</h2>
             <p className="modal-desc">{product.description}</p>
 
             <div className="modal-meta">
@@ -67,6 +85,14 @@ export default function ProductDetailModal({
             </div>
 
             <div className="modal-actions">
+              {onAskShopAssist && (
+                <button
+                  className="modal-assist"
+                  onClick={(event) => onAskShopAssist(product, event.currentTarget)}
+                >
+                  Ask ShopAssist
+                </button>
+              )}
               <button
                 className={`modal-wishlist ${isWishlisted ? 'active' : ''}`}
                 onClick={() => onToggleWishlist(product.id)}
