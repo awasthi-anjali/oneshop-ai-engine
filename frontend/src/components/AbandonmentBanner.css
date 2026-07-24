@@ -1,0 +1,83 @@
+.abandon-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, rgba(244, 114, 182, 0.15), rgba(99, 102, 241, 0.15));
+  border: 1px solid rgba(244, 114, 182, 0.4);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  animation: slideDown 0.4s ease;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.abandon-content {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex: 1;
+}
+
+.abandon-icon {
+  font-size: 1.5rem;
+}
+
+.abandon-content strong {
+  display: block;
+  font-size: 0.85rem;
+  color: #f472b6;
+  margin-bottom: 4px;
+}
+
+.abandon-content p {
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.abandon-discount {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--success);
+  font-weight: 600;
+}
+
+.abandon-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.abandon-checkout {
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.abandon-checkout:hover {
+  background: var(--primary-hover);
+}
+
+.abandon-dismiss {
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.abandon-dismiss:hover {
+  color: var(--text);
+}

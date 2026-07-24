@@ -1,0 +1,13 @@
+# Python dependencies (backend)
+# Install from project root:
+#   python3 -m venv venv
+#   source venv/bin/activate        # Windows: venv\Scripts\activate
+#   pip install -r requirements.txt
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+openai==1.58.1
+python-dotenv==1.0.1
+httpx==0.28.1

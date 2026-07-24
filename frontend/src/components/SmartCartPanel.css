@@ -1,0 +1,158 @@
+.smart-cart {
+  border-top: 1px solid var(--border);
+  padding: 14px 18px;
+}
+
+.smart-cart-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.smart-cart-header h3 {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.smart-ai {
+  font-size: 0.6rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(52, 211, 153, 0.2);
+  color: var(--success);
+  font-weight: 700;
+}
+
+.smart-nudge {
+  font-size: 0.78rem;
+  color: var(--text);
+  line-height: 1.45;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: 8px;
+  border-left: 3px solid var(--primary);
+}
+
+.smart-tip {
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.smart-empty {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.cart-summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: 8px;
+}
+
+.cart-subtotal {
+  font-weight: 700;
+  color: var(--success);
+}
+
+.btn-checkout-main {
+  width: 100%;
+  padding: 11px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 14px;
+  transition: background 0.2s;
+}
+
+.btn-checkout-main:hover {
+  background: var(--primary-hover);
+}
+
+.bundle-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn-add-bundle {
+  font-size: 0.68rem;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--primary-hover);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.btn-add-bundle:hover {
+  background: var(--primary);
+  color: white;
+}
+
+.bundle-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.bundle-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.bundle-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.bundle-save {
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--success);
+  font-weight: 600;
+}
+
+.bundle-reason {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.bundle-products {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.bundle-item {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  background: var(--surface);
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.bundle-total {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--success);
+}
