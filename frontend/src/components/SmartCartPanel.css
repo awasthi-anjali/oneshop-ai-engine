@@ -19,7 +19,7 @@
   font-size: 0.6rem;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(52, 211, 153, 0.2);
+  background: var(--success-soft);
   color: var(--success);
   font-weight: 700;
 }
@@ -30,7 +30,7 @@
   line-height: 1.45;
   margin-bottom: 8px;
   padding: 8px 10px;
-  background: rgba(99, 102, 241, 0.08);
+  background: var(--primary-soft);
   border-radius: 8px;
   border-left: 3px solid var(--primary);
 }
@@ -89,9 +89,9 @@
   font-size: 0.68rem;
   padding: 5px 10px;
   border-radius: 6px;
-  background: rgba(99, 102, 241, 0.15);
+  background: var(--primary-soft);
   color: var(--primary-hover);
-  border: 1px solid rgba(99, 102, 241, 0.3);
+  border: 1px solid var(--primary-border);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -125,7 +125,7 @@
   font-size: 0.65rem;
   padding: 2px 8px;
   border-radius: 10px;
-  background: rgba(52, 211, 153, 0.15);
+  background: var(--success-soft);
   color: var(--success);
   font-weight: 600;
 }

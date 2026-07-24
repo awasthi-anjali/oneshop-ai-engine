@@ -63,15 +63,18 @@ export default function ChatPage({
       setSuggestions([])
 
       try {
-        const res = await sendMessage(msg, sessionId, channel)
+        const res = await sendMessage(msg, sessionId, undefined, channel)
         setSessionId(res.session_id)
+        const comparisonProducts = Array.isArray(res.comparison)
+          ? res.comparison
+          : res.comparison?.products ?? []
         setMessages((prev) => [
           ...prev,
           {
             role: 'assistant',
-            content: res.message.content,
-            products: res.message.products,
-            comparison: res.message.comparison ?? undefined,
+            content: res.message,
+            products: res.recommendations.map((item) => item.product),
+            comparison: comparisonProducts.length ? comparisonProducts : undefined,
           },
         ])
         setSuggestions(res.suggested_actions.length > 0 ? res.suggested_actions : STARTERS)

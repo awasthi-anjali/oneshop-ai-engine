@@ -11,16 +11,83 @@ export interface Product {
   rating: number
   in_stock: boolean
   tags: string[]
+  currency?: string
+  billing_period?: 'one_time' | 'monthly'
 }
 
 export interface ChatMessage {
+  id?: string
   role: 'user' | 'assistant'
   content: string
   products?: Product[]
   comparison?: Product[]
+  status?: ChatStatus
+  mode?: 'ai' | 'fallback'
+  actions?: ChatAction[]
+}
+
+export type ChatStatus =
+  | 'clarifying'
+  | 'recommended'
+  | 'no_match'
+  | 'unsupported'
+  | 'service_handoff'
+  | 'error'
+
+export interface ShoppingNeed {
+  categories: string[]
+  use_cases: string[]
+  device_budget_max?: number | null
+  monthly_budget_max?: number | null
+  platform?: string | null
+  roaming_required?: boolean | null
+  lines?: number | null
+  must_haves: string[]
+  nice_to_haves: string[]
+}
+
+export type ChatActionType =
+  | 'REFINE'
+  | 'COMPARE'
+  | 'OPEN_PRODUCT'
+  | 'PROPOSE_ADD_BUNDLE'
+  | 'HANDOFF_SERVICE'
+
+export interface ChatAction {
+  type: ChatActionType
+  label: string
+  product_ids: string[]
+}
+
+export interface ShopAssistRecommendation {
+  product: Product
+  slot: 'primary_phone' | 'alternative_phone' | 'recommended_plan'
+  reason_codes: string[]
+  reason: string
+}
+
+export interface PageContext {
+  surface: 'catalog' | 'product' | 'cart'
+  entry_point: 'help_me_choose' | 'product_detail' | 'next_best_action' | 'cart'
+  product_id?: string
+  visible_product_ids?: string[]
 }
 
 export interface ChatResponse {
+  session_id: string
+  status: ChatStatus
+  message: string
+  need_profile: ShoppingNeed
+  recommendations: ShopAssistRecommendation[]
+  comparison?: Product[] | { products?: Product[] } | null
+  actions: ChatAction[]
+  mode: 'ai' | 'fallback'
+  suggested_actions: string[]
+  cart_updated: false
+  open_checkout: false
+}
+
+interface LegacyChatResponse {
   session_id: string
   message: {
     role: string
@@ -29,6 +96,27 @@ export interface ChatResponse {
     comparison: Product[] | null
   }
   suggested_actions: string[]
+  cart_updated: false
+  open_checkout: false
+}
+
+interface WireV1ChatResponse {
+  session_id: string
+  status: ChatStatus
+  message:
+    | string
+    | {
+        role: string
+        content: string
+        products?: Product[]
+        comparison?: Product[] | null
+      }
+  need_profile: ShoppingNeed
+  recommendations: ShopAssistRecommendation[]
+  comparison?: Product[] | null
+  actions: ChatAction[]
+  mode: 'ai' | 'fallback'
+  suggested_actions?: string[]
   cart_updated: boolean
   open_checkout: boolean
 }
@@ -438,19 +526,80 @@ export async function dismissAbandonment(sessionId: string | null): Promise<void
 export async function sendMessage(
   message: string,
   sessionId: string | null,
+  pageContext?: PageContext,
   channel: Channel = getChannel()
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, session_id: sessionId, channel }),
+    body: JSON.stringify({
+      message,
+      session_id: sessionId,
+      channel,
+      page_context: pageContext,
+    }),
   })
-  if (!res.ok) throw new Error('Failed to send message')
-  const data: ChatResponse = await res.json()
-  storeSessionId(data.session_id)
-  if (data.cart_updated || data.open_checkout) {
-    notifySessionSync()
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    throw new Error(
+      typeof detail?.detail === 'string'
+        ? detail.detail
+        : 'ShopAssist could not respond. Please try again.'
+    )
   }
+  const raw = (await res.json()) as WireV1ChatResponse | LegacyChatResponse
+  if ('status' in raw) {
+    const data: ChatResponse = {
+      session_id: raw.session_id,
+      status: raw.status,
+      message: typeof raw.message === 'string' ? raw.message : raw.message.content,
+      need_profile: raw.need_profile,
+      recommendations: raw.recommendations.slice(0, 3),
+      comparison:
+        raw.comparison ??
+        (typeof raw.message === 'string' ? null : raw.message.comparison) ??
+        null,
+      actions: raw.actions,
+      mode: raw.mode,
+      suggested_actions: raw.suggested_actions ?? [],
+      cart_updated: false,
+      open_checkout: false,
+    }
+    storeSessionId(data.session_id)
+    return data
+  }
+
+  const legacy = raw as LegacyChatResponse
+  const products = legacy.message.products ?? []
+  const data: ChatResponse = {
+    session_id: legacy.session_id,
+    status: products.length > 0 ? 'recommended' : 'clarifying',
+    message: legacy.message.content,
+    need_profile: {
+      categories: [],
+      use_cases: [],
+      must_haves: [],
+      nice_to_haves: [],
+    },
+    recommendations: products.slice(0, 3).map((product, index) => ({
+      product,
+      slot:
+        product.category === 'plan'
+          ? 'recommended_plan'
+          : index === 0
+            ? 'primary_phone'
+            : 'alternative_phone',
+      reason_codes: [],
+      reason: 'Recommended from the demo catalog.',
+    })),
+    comparison: legacy.message.comparison,
+    actions: [],
+    mode: 'fallback',
+    suggested_actions: legacy.suggested_actions ?? [],
+    cart_updated: false,
+    open_checkout: false,
+  }
+  storeSessionId(data.session_id)
   return data
 }
 

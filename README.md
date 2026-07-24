@@ -2,38 +2,59 @@
 
 AI-powered shopping intelligence engine for **OneShop (Web)** and **OneApp (Mobile)**.
 
-## Current Capabilities
+## ShopAssist V1
 
-### 1. Conversational Shopping Assistant (ShopAssist tab)
-Natural language discover, compare, and select products via chat.
+The current product slice is a bounded phone-and-plan purchase guide embedded in
+OneShop, with grounded recommendations, explicit cart confirmation, and an
+accessible consumer light theme.
 
-### 2. Personalized Discovery (Shop tab)
+- [Product requirements](docs/shopassist/PRD.md)
+- [Implementation plan](docs/shopassist/IMPLEMENTATION_PLAN.md)
+- [Evaluation and golden scenarios](docs/shopassist/EVALUATION.md)
+- [Current-state audit](docs/shopassist/AUDIT.md)
+- [Demo script](docs/shopassist/DEMO.md)
+- [Implementation handoff](docs/shopassist/HANDOFF.md)
+
+## Current Prototype Status
+
+### 1. ShopAssist V1
+The commerce-bounded assistant runs in a persistent OneShop drawer, extracts a
+structured shopping need, returns grounded phone-and-plan picks, and requires
+explicit confirmation before an exact bundle cart mutation.
+
+### 2. Personalized Discovery (prototype)
 - Browse all products with **Wishlist** and **Add to Cart** on each card
 - Wishlist, cart, and viewed products drive **intent detection**
 - **"For You"** panel on the right shows personalized recommendations with reasons
 - Product detail modal with click tracking
 
-### 3. Next Best Action
+### 3. Next Best Action (prototype)
 - Contextual banner suggesting compare, add plan, checkout, bundle actions
 - Funnel stage detection (browse → consider → cart → checkout)
 
-### 4. Smart Cart & Checkout
+### 4. Smart Cart & Checkout (prototype; not ShopAssist V1 scope)
 - **Smart Cart** panel in the right sidebar: bundle suggestions, nudge messages, AI checkout tips
 - **One-click "Add bundle to cart"** for phone+plan and accessory bundles
 - **Checkout modal** with demo payment flow, bundle savings, and order confirmation
 - **Cart abandonment tracking** — leaving with items in cart triggers a recovery banner with 10% discount on return
 
+### 5. AI Orchestrator (experimental)
+- **`GET /api/intelligence/profile`** — single AI call returns intent, recommendations, next actions, and smart cart together
+- **AI-first recommendations** — LLM picks product IDs; rules validate stock and exclusions
+- **RAG-lite retrieval** — semantic search narrows catalog focus before the LLM decides (when API key is set)
+- ShopAssist uses a bounded recommendation path with an explicit proposal and
+  confirmation boundary; chat requests cannot mutate the cart.
+
 ### 6. Omnichannel Experience (OneShop Web + OneApp Mobile)
-- **OneShop Web** at `/` — desktop shopping experience
+- **OneShop Web** at `/` — desktop shopping experience with embedded ShopAssist drawer
 - **OneApp Mobile** at `/app` — mobile shell with bottom nav (Shop · Assist · Sync)
 - **Shared session** — same `session_id` = same cart, wishlist, viewed, AI recommendations
 - **Continue links** — copy or open cross-channel URLs with `?session_id=`
 - **Customer linking** — optional `customer_id` for persistent identity across devices
 - **Sync banner** — “Synced from OneApp Mobile — 2 items in your cart” when switching channels
-- **`GET /api/intelligence/profile`** — single AI call returns intent, recommendations, next actions, and smart cart together
-- **AI-first recommendations** — LLM picks product IDs; rules validate stock and exclusions
-- **RAG-lite retrieval** — semantic search narrows catalog focus before the LLM decides (when API key is set)
-- **Agentic ShopAssist** — chat can add to cart, add bundles, view cart, check recovery offers, and open checkout
+
+> The included OneTel/USD catalog is synthetic demo data. It is not current
+> Deutsche Telekom inventory, pricing, availability, or eligibility data.
 
 ## Project Structure
 
@@ -135,10 +156,14 @@ curl -X POST http://localhost:8000/api/chat \
 
 ## Roadmap (Remaining Capabilities)
 
-- [x] Conversational Shopping Assistant
-- [x] Personalized Discovery
-- [x] Next Best Action
-- [x] Smart Cart & Checkout
+- [x] Embedded, commerce-bounded ShopAssist V1
+- [x] Structured phone-and-plan shopping need
+- [x] Grounded shortlist and comparison
+- [x] Explicit cart proposal and confirmation
+- [x] Accessible consumer light theme
+- [x] Personalized Discovery prototype
+- [x] Next Best Action prototype
+- [x] Smart Cart & Checkout prototype
 - [x] Omnichannel Experience (OneShop Web + OneApp Mobile)
 
 ## Tech Stack
