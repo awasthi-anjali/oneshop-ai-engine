@@ -1,0 +1,67 @@
+.idle-cart-nudge {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1000;
+  width: min(20rem, calc(100vw - 2rem));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  animation: idle-nudge-slide 0.3s ease-out;
+}
+
+@keyframes idle-nudge-slide {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.idle-nudge-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.25rem;
+}
+
+.idle-nudge-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin-bottom: 0.35rem;
+}
+
+.idle-nudge-body {
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.idle-nudge-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+}
+
+.idle-nudge-checkout {
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0.6rem;
+  border-radius: 8px;
+  background: var(--primary);
+  color: white;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.idle-nudge-checkout:hover {
+  background: var(--primary-hover);
+}

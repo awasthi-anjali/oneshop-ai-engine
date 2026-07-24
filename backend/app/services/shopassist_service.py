@@ -51,6 +51,11 @@ from app.services.shopassist_prompt import (
     SHOPASSIST_RESPONSE_SYSTEM_PROMPT,
     SHOPASSIST_SYSTEM_PROMPT,
 )
+from app.services.smart_cart_service import (
+    format_smart_cart_chat_hints,
+    get_smart_cart,
+    smart_cart_chat_suffix,
+)
 
 
 SERVICE_WORDS = (
@@ -255,11 +260,13 @@ class ShopAssistService:
         if self._is_cart_lookup(lowered):
             state.turns.append({"role": "user", "content": text})
             summary = self._cart_summary(sid)
+            smart = get_smart_cart(sid, request.user_id)
+            message = self._cart_summary_message(summary) + smart_cart_chat_suffix(smart)
             return self._response(
                 sid,
                 state,
                 ChatStatus.RECOMMENDED,
-                self._cart_summary_message(summary),
+                message,
                 [],
                 [],
                 ChatMode.FALLBACK,
@@ -343,6 +350,10 @@ class ShopAssistService:
                         recs,
                         assistant_context.get("behavioral_memory", {}),
                     )
+                    if session_store.get_cart_ids(sid):
+                        fallback_message += smart_cart_chat_suffix(
+                            get_smart_cart(sid, request.user_id)
+                        )
                     message = (
                         await self._ai_compose_response(
                             text,
@@ -403,6 +414,14 @@ class ShopAssistService:
                 "cart total",
                 "check my cart",
                 "view my cart",
+                "what should i add",
+                "what else should i add",
+                "complete my cart",
+                "cart suggestions",
+                "suggest for my cart",
+                "help with my cart",
+                "help me choose a compatible phone and plan for my cart",
+                "ask about cart",
             )
         )
 
@@ -457,10 +476,15 @@ class ShopAssistService:
         )
 
     def _assistant_context(self, user_id: str | None, session_id: str) -> dict[str, Any]:
-        return {
+        context: dict[str, Any] = {
             "preferences": bounded_preference_context(user_id, session_id),
             "behavioral_memory": bounded_memory_context(user_id, self._memory_store),
         }
+        if session_store.get_cart_ids(session_id):
+            context["smart_cart_suggestions"] = format_smart_cart_chat_hints(
+                get_smart_cart(session_id, user_id)
+            )
+        return context
 
     def _effective_behavioral_context(
         self,

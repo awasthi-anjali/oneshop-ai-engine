@@ -92,17 +92,8 @@ async def next_best_action(session_id: str | None = None) -> NextBestActionRespo
 @router.get("/api/intelligence/smart-cart", response_model=SmartCartResponse)
 async def smart_cart(session_id: str | None = None) -> SmartCartResponse:
     sid = session_store.get_or_create(session_id)
-    cart, bundles, nudge, checkout_tip, ai_powered, subtotal, savings = get_smart_cart(sid)
-    return SmartCartResponse(
-        session_id=sid,
-        cart=cart,
-        bundles=bundles,
-        nudge=nudge,
-        checkout_tip=checkout_tip,
-        ai_powered=ai_powered,
-        subtotal=subtotal,
-        estimated_savings=savings,
-    )
+    result = get_smart_cart(sid)
+    return SmartCartResponse(session_id=sid, **result)
 
 
 @router.post("/api/customer/cart/add-bundle", response_model=SessionStateResponse)

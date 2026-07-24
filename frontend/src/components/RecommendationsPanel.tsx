@@ -1,8 +1,10 @@
 import type {
   BundleSuggestion,
+  CrossSellItem,
   CustomerIntent,
   PersonalizedProfile,
   PersonalizedRecommendation,
+  Product,
 } from '../api'
 import SmartCartPanel from './SmartCartPanel'
 import './RecommendationsPanel.css'
@@ -23,13 +25,19 @@ interface Props {
   retrievalQuery?: string
   smartCart: {
     bundles: BundleSuggestion[]
+    crossSell: CrossSellItem[]
     nudge: string
     checkoutTip: string
     aiPowered: boolean
     subtotal: number
+    discount: number
+    total: number
+    cartItems: Product[]
   }
   onCheckout: () => void
   onAddBundle: (productIds: string[]) => void
+  onAddCrossSell: (productId: string) => void
+  onRemoveFromCart: (productId: string) => void
 }
 
 export default function RecommendationsPanel({
@@ -49,6 +57,8 @@ export default function RecommendationsPanel({
   smartCart,
   onCheckout,
   onAddBundle,
+  onAddCrossSell,
+  onRemoveFromCart,
 }: Props) {
   const strongestRecommendation = recommendations[0]
 
@@ -153,13 +163,19 @@ export default function RecommendationsPanel({
 
       <SmartCartPanel
         bundles={smartCart.bundles}
+        crossSell={smartCart.crossSell}
         nudge={smartCart.nudge}
         checkoutTip={smartCart.checkoutTip}
         aiPowered={smartCart.aiPowered}
         cartCount={cartCount}
+        cartItems={smartCart.cartItems}
         subtotal={smartCart.subtotal}
+        discount={smartCart.discount}
+        total={smartCart.total}
         onCheckout={onCheckout}
         onAddBundle={onAddBundle}
+        onAddCrossSell={onAddCrossSell}
+        onRemoveFromCart={onRemoveFromCart}
       />
     </aside>
   )

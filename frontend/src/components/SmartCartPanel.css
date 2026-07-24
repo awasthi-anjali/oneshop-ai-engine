@@ -2,7 +2,7 @@
   border-top: 1px solid var(--border);
   padding: 10px 12px;
   flex-shrink: 0;
-  max-height: min(240px, 38vh);
+  max-height: min(420px, 55vh);
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -162,4 +162,194 @@
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--success);
+}
+
+.cart-items-list {
+  margin-bottom: 10px;
+}
+
+.cart-line-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cart-line-item:last-child {
+  border-bottom: none;
+}
+
+.cart-line-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cart-line-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cart-line-price {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.cart-line-remove {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.cart-line-remove:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.cross-sell-section {
+  margin: 10px 0;
+  padding: 8px 10px;
+  background: var(--primary-soft);
+  border-radius: 8px;
+}
+
+.cross-sell-heading {
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.cross-sell-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.cross-sell-row:last-child {
+  border-bottom: none;
+}
+
+.cross-sell-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cross-sell-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.cross-sell-reason {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.cross-sell-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.cross-sell-price {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.btn-cross-sell-add {
+  font-size: 0.65rem;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--primary);
+  color: white;
+  font-weight: 600;
+}
+
+.btn-cross-sell-add:hover {
+  background: var(--primary-hover);
+}
+
+.bundle-card-highlight {
+  border-color: var(--success);
+  background: var(--success-soft);
+}
+
+.bundle-product-rows {
+  margin-bottom: 6px;
+}
+
+.bundle-product-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  padding: 2px 0;
+}
+
+.bundle-original-price {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.bundle-pricing {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.bundle-was {
+  font-size: 0.72rem;
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.bundle-savings-label {
+  font-size: 0.65rem;
+  color: var(--success);
+  font-weight: 600;
+}
+
+.cart-totals {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin: 10px 0;
+}
+
+.cart-total-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.cart-discount-row {
+  color: var(--success);
+}
+
+.cart-final-row {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 4px;
+}
+
+.cart-saved-msg {
+  font-size: 0.68rem;
+  color: var(--success);
+  text-align: right;
+  margin-top: 4px;
 }

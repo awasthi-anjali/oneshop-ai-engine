@@ -24,6 +24,7 @@ import {
   trackProductView,
   type AbandonmentStatus,
   type BundleSuggestion,
+  type CrossSellItem,
   type ChatAction,
   type CartProposal,
   type ChatMessage,
@@ -41,6 +42,7 @@ import {
   type ShopAssistRecommendation,
 } from '../api'
 import AbandonmentBanner from '../components/AbandonmentBanner'
+import IdleCartNudge from '../components/IdleCartNudge'
 import CatalogFilters from '../components/CatalogFilters'
 import CheckoutModal from '../components/CheckoutModal'
 import CompareModal from '../components/CompareModal'
@@ -120,12 +122,27 @@ export default function ShopPage({
   const [nbaAi, setNbaAi] = useState(false)
   const [smartCart, setSmartCart] = useState<{
     bundles: BundleSuggestion[]
+    crossSell: CrossSellItem[]
     nudge: string
     checkoutTip: string
     aiPowered: boolean
     subtotal: number
+    discount: number
+    total: number
     estimatedSavings: number
-  }>({ bundles: [], nudge: '', checkoutTip: '', aiPowered: false, subtotal: 0, estimatedSavings: 0 })
+    cartItems: Product[]
+  }>({
+    bundles: [],
+    crossSell: [],
+    nudge: '',
+    checkoutTip: '',
+    aiPowered: false,
+    subtotal: 0,
+    discount: 0,
+    total: 0,
+    estimatedSavings: 0,
+    cartItems: [],
+  })
   const [abandonment, setAbandonment] = useState<AbandonmentStatus | null>(null)
   const [syncMessage, setSyncMessage] = useState('')
   const [channelsUsed, setChannelsUsed] = useState<string[]>([])
@@ -207,11 +224,15 @@ export default function ShopPage({
       setRecommendationPipeline(profile.recommendation_pipeline || 'rules')
       setSmartCart({
         bundles: profile.bundles,
+        crossSell: profile.cross_sell_suggestions ?? [],
         nudge: profile.nudge,
         checkoutTip: profile.checkout_tip,
         aiPowered: profile.ai_powered,
         subtotal: profile.subtotal,
+        discount: profile.discount ?? profile.estimated_savings ?? 0,
+        total: profile.total ?? profile.subtotal,
         estimatedSavings: profile.estimated_savings,
+        cartItems: profile.cart,
       })
       if (profile.abandonment?.is_abandoned) setAbandonment(profile.abandonment)
       setSyncMessage(profile.sync_message ?? '')
@@ -1183,6 +1204,8 @@ export default function ShopPage({
           smartCart={smartCart}
           onCheckout={() => setShowCheckout(true)}
           onAddBundle={handleAddBundle}
+          onAddCrossSell={handleAddToCart}
+          onRemoveFromCart={handleRemoveFromCart}
         />
       </div>
 
@@ -1277,6 +1300,12 @@ export default function ShopPage({
         products={compareResults}
         loading={compareLoading}
         onClose={() => setCompareOpen(false)}
+      />
+
+      <IdleCartNudge
+        cartItems={cartProducts}
+        onCheckout={() => setShowCheckout(true)}
+        onDismiss={() => {}}
       />
     </>
   )
