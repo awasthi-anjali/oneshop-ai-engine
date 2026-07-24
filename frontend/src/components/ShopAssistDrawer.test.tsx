@@ -128,6 +128,7 @@ const cartProposal: CartProposal = {
 }
 
 class MockSpeechRecognition {
+  static transcript = 'Android camera phone under $700'
   lang = 'en-US'
   continuous = false
   interimResults = true
@@ -143,7 +144,7 @@ class MockSpeechRecognition {
     this.onstart?.()
     this.onresult?.({
       resultIndex: 0,
-      results: [{ isFinal: true, 0: { transcript: 'Android camera phone under $700' } }],
+      results: [{ isFinal: true, 0: { transcript: MockSpeechRecognition.transcript } }],
     })
     this.onend?.()
   })
@@ -154,6 +155,7 @@ class MockSpeechRecognition {
 
 describe('ShopAssistDrawer', () => {
   beforeEach(() => {
+    MockSpeechRecognition.transcript = 'Android camera phone under $700'
     ;(window as Window & { SpeechRecognition?: typeof MockSpeechRecognition }).SpeechRecognition =
       MockSpeechRecognition
   })
@@ -360,6 +362,37 @@ describe('ShopAssistDrawer', () => {
     await user.click(screen.getByRole('button', { name: 'Start voice input' }))
     expect(onDraftChange).toHaveBeenCalledWith('Android camera phone under $700')
     expect(onSend).toHaveBeenCalledWith('Android camera phone under $700')
+  })
+
+  it('auto-sends a greeting-only voice transcript through the normal message path', async () => {
+    MockSpeechRecognition.transcript = 'hay hello'
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    render(<ShopAssistDrawer {...baseProps({ onSend })} />)
+
+    await user.click(screen.getByRole('button', { name: 'Start voice input' }))
+    expect(onSend).toHaveBeenCalledWith('hay hello')
+  })
+
+  it('removes stale recommendation cards when a voice greeting response has no picks', () => {
+    const { rerender } = render(<ShopAssistDrawer {...baseProps()} />)
+    expect(screen.getByRole('heading', { name: 'ShopAssist recommends' })).toBeInTheDocument()
+
+    rerender(
+      <ShopAssistDrawer
+        {...baseProps({
+          messages: [
+            { role: 'user', content: 'hay hello' },
+            { role: 'assistant', content: 'Hi! Tell me what you need in a phone or plan.' },
+          ],
+          recommendations: [],
+          status: 'clarifying',
+        })}
+      />,
+    )
+
+    expect(screen.getByText('Hi! Tell me what you need in a phone or plan.')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'ShopAssist recommends' })).not.toBeInTheDocument()
   })
 
   it('sends on Enter, preserves a newline on Shift+Enter, and blocks loading duplicates', async () => {

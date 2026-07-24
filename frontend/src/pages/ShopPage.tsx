@@ -56,6 +56,7 @@ import ShopAssistFab from '../components/ShopAssistFab'
 import { useCartAbandonmentTracking } from '../hooks/useCartAbandonment'
 import { useCrossTabSync } from '../hooks/useCrossTabSync'
 import {
+  filterProductsForSearch,
   nameMatchesQuery,
   priceRangeToParams,
   sortProducts,
@@ -682,7 +683,7 @@ export default function ShopPage({
   const categoryFiltered =
     filter === 'all' ? products : products.filter((product) => product.category === filter)
   const allFiltered = sortProducts(
-    normalizedQuery ? categoryFiltered : categoryFiltered.filter((product) => nameMatchesQuery(product, searchQuery)),
+    filterProductsForSearch(categoryFiltered, searchQuery, searchMethod),
     sortBy
   )
   const activeDemoProfile = DEMO_USERS.find((user) => user.id === personalizationUserId) ?? DEMO_USERS[0]
@@ -1114,7 +1115,7 @@ export default function ShopPage({
                     onToggleCompare={handleToggleCompare}
                   />
                 ))
-              : (showFullCatalog ? allFiltered : suggestedProducts).map((product) => {
+              : (normalizedQuery || showFullCatalog ? allFiltered : suggestedProducts).map((product) => {
                   const recommendation = recommendationByProduct.get(product.id)?.recommendation
                   return (
                   <ProductShopCard

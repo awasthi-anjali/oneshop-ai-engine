@@ -415,8 +415,9 @@ class ShopAssistService:
     ) -> ChatResponse | None:
         normalized = re.sub(r"[^a-z\s]", "", lowered).strip()
         normalized = " ".join(normalized.split())
-        if normalized in {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}:
+        if self._is_greeting_only(normalized):
             state.turns.append({"role": "user", "content": text})
+            state.turns = state.turns[-12:]
             return self._response(
                 sid,
                 state,
@@ -441,6 +442,19 @@ class ShopAssistService:
                 ChatMode.FALLBACK,
             )
         return None
+
+    @staticmethod
+    def _is_greeting_only(normalized: str) -> bool:
+        if normalized in {"good morning", "good afternoon", "good evening"}:
+            return True
+        tokens = normalized.split()
+        salutations = {"hi", "hiya", "hello", "hey", "hay"}
+        greeting_only_words = salutations | {"there", "shopassist", "assistant"}
+        return (
+            1 <= len(tokens) <= 3
+            and any(token in salutations for token in tokens)
+            and all(token in greeting_only_words for token in tokens)
+        )
 
     def _assistant_context(self, user_id: str | None, session_id: str) -> dict[str, Any]:
         return {

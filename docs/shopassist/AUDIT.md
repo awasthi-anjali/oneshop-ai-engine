@@ -43,7 +43,7 @@ guide in the observed golden journeys. Remaining claims must stay narrow:
 | One canonical prompt | Verified | Code inspection: one prompt module and one bounded parser call path |
 | Currency and billing cadence | Verified | Backend contract tests and live proposal totals (`$699` once, `$85/month`) |
 | Accessible responsive light theme | Partial | Three viewports, sampled AA token contrast, visible focus ring, no app overflow, mobile input visible; real software keyboard and simultaneous checkout layering not exercised |
-| Automated evaluation evidence | Verified | Fresh post-merge regression: 73 backend tests and 26 frontend tests pass; production build transforms 234 modules |
+| Automated evaluation evidence | Verified | Fresh merged-regression run: 82 backend tests and 31 frontend tests pass; production build transforms 234 modules |
 | OneApp UI and production persistence | Missing | Explicitly deferred from V1 |
 
 ## Baseline verification
@@ -85,11 +85,11 @@ desktop proposal, 1024px drawer, 375px sheet, and product-modal layering.
 
 ## Conversational-routing and Magenta-pattern follow-up
 
-Fresh post-`origin/main` integration evidence on 2026-07-24:
+Fresh merged-regression evidence through 2026-07-25:
 
-- `python -m pytest -q` - exit 0; 73 tests passed in 9.75s.
-- `npm test -- --run` - exit 0; 5 files and 26 tests passed in 8.89s.
-- `npm run build` - exit 0; 234 modules transformed in 1.26s.
+- `python -m pytest -q` - exit 0; 82 tests passed in 9.47s.
+- `npm test -- --run` - exit 0; 6 files and 31 tests passed in 13.76s.
+- `npm run build` - exit 0; 234 modules transformed in 2.60s.
 - The reported `$300` typo/paraphrase returns an honest phone no-match instead
   of `unsupported`.
 - Discount, deal, cashback, promotion, and rebate turns remain in scope but
@@ -110,3 +110,8 @@ Fresh post-`origin/main` integration evidence on 2026-07-24:
 - The duplicate omnichannel sync banner introduced during conflict resolution
   was traced to two adjacent `OmnichannelSyncBanner` renders; the second render
   was removed and the frontend tests/build were rerun.
+- Voice-originated greeting variants (`hay hello`, `hey hello`, punctuation and
+  casing variants) now run before inherited shopping context. Live replay after
+  an Android-camera recommendation retained the need chips, returned the short
+  greeting, and removed stale recommendation cards. Shopping-bearing near
+  matches such as `hey, show me an Android phone under $700` remain shopping.

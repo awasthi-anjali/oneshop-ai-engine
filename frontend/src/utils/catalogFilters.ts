@@ -1,4 +1,4 @@
-import type { Product } from '../api'
+import type { Product, ProductSearchMethod } from '../api'
 
 export type SortOption = 'relevance' | 'price_asc' | 'price_desc' | 'rating'
 export type PriceRange = 'all' | 'under_500' | '500_1000' | 'over_1000'
@@ -47,6 +47,15 @@ export function nameMatchesQuery(product: Product, query: string): boolean {
     .toLowerCase()
 
   return tokens.every((token) => haystack.includes(token))
+}
+
+export function filterProductsForSearch(
+  products: Product[],
+  query: string,
+  searchMethod: ProductSearchMethod,
+): Product[] {
+  if (!query.trim() || searchMethod !== 'name') return products
+  return products.filter((product) => nameMatchesQuery(product, query))
 }
 
 export function filterSuggestions(names: string[], query: string, limit = 6): string[] {

@@ -54,9 +54,9 @@ raw chat and arbitrary PII-shaped fields are rejected.
 
 ## Fresh integrated verification
 
-- Backend: `73 passed in 9.75s`.
-- Frontend: `5` files, `26` tests passed in `8.89s`.
-- Production build: `234 modules transformed`, built in `1.26s`.
+- Backend: `82 passed in 9.47s`.
+- Frontend: `6` files, `31` tests passed in `13.76s`.
+- Production build: `234 modules transformed`, built in `2.60s`.
 - Live profile divergence:
   - Dev: Pixel 8, OnePlus 12, Galaxy A54 5G.
   - Alex: Family Connect Plan, Data Only Plan, Galaxy A54 5G.
@@ -67,6 +67,10 @@ raw chat and arbitrary PII-shaped fields are rejected.
 - ShopAssist responsive checks at 1440×900, 1024×768, and 375×812 reported
   `scrollWidth === clientWidth`; the mobile drawer and composer remained inside
   the viewport.
+- Fresh merged-regression checks on 2026-07-25 confirmed that `iphone` returns
+  only iPhone SE, iPhone 15 Pro, and MagSafe Charger instead of all 18 catalog
+  items. A recommendation followed by the voice transcript `hay hello` kept the
+  current need, returned a short greeting, and displayed no stale pick cards.
 
 See `docs/recommendations/AUDIT.md` for the full evidence ledger and
 `user-memory.md` for the behavioral-memory boundary.

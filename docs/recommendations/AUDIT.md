@@ -10,7 +10,7 @@ The V1 uses the actual 18-item catalog, persists append-only interaction events 
 
 | Gate | Status | Evidence |
 |---|---|---|
-| Backend API/data/scoring | Pass | Personalized-recommendation slice originally passed 37 tests; final combined backend regression passed `73` tests. Independent API probing returned five distinct persona top-three rankings, normalized scores/components, and at most two items per brand |
+| Backend API/data/scoring | Pass | Fresh combined regression passed `82` tests. Independent API probing returned five distinct persona top-three rankings, normalized scores/components, and at most two items per brand; merged catalog search now excludes zero-relevance products |
 | SQLite persistence/idempotency | Pass | First event accepted at version 1; identical `event_id` rejected as duplicate at the same version; database inspection found zero duplicated event IDs |
 | Isolation | Pass | Reusing user A's session ID for user B produced a different session and zero interactions |
 | Versioned real-time updates | Pass | `/updates` returned `changed: false` before a new event and `changed: true`, version 2 after it; this is versioned polling, not SSE |
@@ -21,10 +21,10 @@ The V1 uses the actual 18-item catalog, persists append-only interaction events 
 | Explanation grounding | Pass | Every audited reason code came from the declared allow-list; scores and all six components were in `[0,1]`; visible explanations referenced validated brand/category/query/price/recency evidence |
 | Metadata privacy | Pass at API/storage boundary | Raw-chat metadata received 422; persisted audit rows contained only normalized `query`, `rec_position`, and `surface`; database search found no `raw_chat` or `@` metadata |
 | ShopAssist hard constraints | Pass | Backend test sent an Apple preference with `Android under $500`; every result remained Android and at or below $500 |
-| Frontend automated tests | Pass | Fresh post-fix reverification: `5` files, `26` tests passed; includes upstream voice input plus compact ShopAssist header/context, direct quick replies, keyboard-operable recommendation pills, exact proposal totals, duplicate-action suppression, backend-controlled comparison, immediate profile recommendations, and explicit post-chat handoff |
+| Frontend automated tests | Pass | Fresh merged-regression reverification: `6` files, `31` tests passed; includes exact/semantic search filtering, voice greeting auto-send, stale-card removal, compact ShopAssist behavior, exact proposal totals, and backend-controlled actions |
 | Existing ShopAssist regression | Pass | Included in complete backend/frontend runs; no regression failures |
 | Natural-language ShopAssist routing | Pass for tested attacks | Currency suffixes (`dollars`, `USD`, `bucks`), typo `sugest`, inherited phone context, promotion synonyms, greetings, thanks, and ambiguous AI classification are covered. Hard injection/service boundaries still precede AI and catalog facts remain deterministic |
-| Production build | Pass | Fresh post-fix `tsc -b && vite build`: `234 modules transformed`, built in `1.26s`; JS 340.69 kB (105.81 kB gzip), CSS 56.66 kB (10.00 kB gzip) |
+| Production build | Pass | Fresh merged-regression `tsc -b && vite build`: `234 modules transformed`, built in `2.60s`; JS 340.75 kB (105.83 kB gzip), CSS 56.66 kB (10.00 kB gzip) |
 | Frontend event tracking | Pass | Live browser load produced six HTTP 200 impression writes for six visible products, each with a product ID and exact metadata `{"surface":"for_you","visible":true}`. Clicking the first recommendation produced one HTTP 200 `rec_click` with `rec_position`/`surface`, followed by the intentional catalog `product_view`; no 422 remained |
 | No double tracking | Pass | Reposting the captured browser `rec_click` event ID and a captured browser impression event ID each returned `accepted: false, duplicate: true`; SQLite retained one row per event ID |
 | Responsive light theme | Pass | Desktop and tablet show the switcher, live For You, continuity, grounded explanations, and score components. Fresh 375 px evidence shows a full-width recommendation, complete explanation, reason codes, price/actions, and all six expanded score components; the former 400 px cap is gone |
@@ -37,16 +37,16 @@ Run from the stated directories on 2026-07-24:
 backend> python -m pytest -q
 ........................................................................ [ 98%]
 .                                                                        [100%]
-73 passed in 9.75s
+82 passed in 9.47s
 
 frontend> npm test -- --run
-Test Files  5 passed (5)
-Tests       26 passed (26)
-Duration    8.89s
+Test Files  6 passed (6)
+Tests       31 passed (31)
+Duration    13.76s
 
 frontend> npm run build
 234 modules transformed
-built in 1.26s
+built in 2.60s
 ```
 
 The independent TestClient probe made 40 warmed recommendation requests for `user_011?query=phone&limit=6`: median **350.16 ms**, p95 **379.23 ms**, max **386.82 ms**. This is an in-process development measurement, not a production benchmark, but it decisively does not support the fictional 25 ms claim.
@@ -76,6 +76,8 @@ SQLite inspection of the accepted audit events showed normalized metadata:
 - `evidence/shopassist-budget-discount-cashback-integrated.png` — exact typo/budget, discount/deal, and cashback follow-up sequence after merging current `origin/main`.
 - `evidence/shopassist-integrated-desktop-1440.png`, `shopassist-integrated-tablet-1024.png`, and `shopassist-integrated-mobile-375.png` — post-merge ShopAssist layout and cart-confirmation evidence.
 - `evidence/omnichannel-sync-single-integrated.png` — storefront after removing the duplicated `OmnichannelSyncBanner` render introduced during conflict resolution.
+- `evidence/search-iphone-integrated-fixed.png` — live `iphone` search showing three relevant products rather than the full 18-product catalog.
+- `evidence/shopassist-voice-hay-hello-fixed.png` — exact post-recommendation `hay hello` replay with the need retained, a short greeting, and no stale recommendation cards.
 
 ## Spec assumption roast
 
