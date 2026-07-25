@@ -50,6 +50,7 @@ const STARTERS = [
   { label: 'Find a phone', text: 'Help me find a phone for my needs.' },
   { label: 'Choose a plan', text: 'Help me choose a mobile plan.' },
   { label: 'Build phone + plan', text: 'Help me build a phone and plan bundle.' },
+  { label: 'Checkout', text: "I'm ready to checkout." },
 ]
 
 const BUDGET_REPLIES = [
@@ -209,7 +210,7 @@ export default function ShopAssistDrawer({
         ? 'From next best action'
         : null
   const supplementalActions = actions.filter(
-    (action) => action.type === 'HANDOFF_SERVICE',
+    (action) => action.type === 'HANDOFF_SERVICE' || action.type === 'OPEN_CHECKOUT',
   )
   const latestMessage = messages[messages.length - 1]
   const showRecommendations = recommendations.length > 0 && (
@@ -470,9 +471,20 @@ export default function ShopAssistDrawer({
         {supplementalActions.length > 0 && (
           <div className="assist-actions" aria-label="ShopAssist actions">
             {supplementalActions.map((action) => (
-              <span className="assist-handoff" key={`${action.type}-${action.label}`}>
-                {action.label}
-              </span>
+              action.type === 'OPEN_CHECKOUT' ? (
+                <button
+                  type="button"
+                  className="confirm-proposal"
+                  key={`${action.type}-${action.label}`}
+                  onClick={() => onAction(action)}
+                >
+                  {action.label}
+                </button>
+              ) : (
+                <span className="assist-handoff" key={`${action.type}-${action.label}`}>
+                  {action.label}
+                </span>
+              )
             ))}
           </div>
         )}

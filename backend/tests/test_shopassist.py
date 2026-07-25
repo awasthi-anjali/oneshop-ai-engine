@@ -440,3 +440,41 @@ def test_same_session_turns_are_serialized(monkeypatch):
         "first Android phone under $500",
         "second Android phone under $700",
     ]
+
+
+def test_checkout_empty_cart_does_not_open_checkout(client):
+    data = post(client, "I'm ready to checkout").json()
+    assert data["status"] == "no_match"
+    assert data["open_checkout"] is False
+    assert data["selected_tool"] == "checkout"
+    assert "empty" in data["message"].lower()
+
+
+def test_checkout_with_cart_items_opens_checkout(client):
+    sid = str(uuid.uuid4())
+    session_store.add_to_cart(sid, "google-pixel-8")
+    session_store.add_to_cart(sid, "unlimited-essential")
+
+    data = post(client, "I want to checkout", sid).json()
+    assert data["status"] == "recommended"
+    assert data["open_checkout"] is True
+    assert data["selected_tool"] == "checkout"
+    assert data["cart_summary"]["total_items"] == 2
+    assert any(action["type"] == "OPEN_CHECKOUT" for action in data["actions"])
+    assert "Opening checkout" in data["message"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Proceed to payment",
+        "Let's finalize my order",
+        "I'm ready to pay for my cart",
+    ],
+)
+def test_checkout_phrase_variants(client, query):
+    sid = str(uuid.uuid4())
+    session_store.add_to_cart(sid, "iphone-se")
+    data = post(client, query, sid).json()
+    assert data["open_checkout"] is True
+    assert data["cart_summary"]["total_items"] == 1

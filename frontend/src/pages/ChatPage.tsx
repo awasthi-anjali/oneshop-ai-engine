@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { getStoredSessionId, sendMessage, type ChatMessage } from '../api'
+import { getPersonalizationUserId, getStoredSessionId, sendMessage, type ChatMessage } from '../api'
+import { applyCheckoutProfileFromChat } from '../checkoutProfile'
 import MessageBubble from '../components/MessageBubble'
 import '../App.css'
 
@@ -86,6 +87,9 @@ export default function ChatPage({
         if (res.open_checkout) {
           setActionBanner('Opening checkout on Shop tab…')
           onOpenCheckout?.()
+        }
+        if (res.checkout_profile) {
+          applyCheckoutProfileFromChat(getPersonalizationUserId(), res.checkout_profile)
         }
       } catch {
         setMessages((prev) => [

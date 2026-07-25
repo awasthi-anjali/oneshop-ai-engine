@@ -37,6 +37,7 @@ describe('CheckoutModal trusted totals', () => {
         open
         cart={[phone, plan]}
         sessionId="checkout-test"
+        userId="user_001"
         oneTimeTotal={699}
         monthlyTotal={85}
         onClose={vi.fn()}
@@ -46,8 +47,8 @@ describe('CheckoutModal trusted totals', () => {
 
     expect(screen.getByText('$699.00')).toBeInTheDocument()
     expect(screen.getByText('$85.00/month')).toBeInTheDocument()
-    expect(screen.getByText('No promotional discount is assumed.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Confirm demo order' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirm order' })).not.toBeInTheDocument()
     expect(screen.queryByText('$784.00')).not.toBeInTheDocument()
     expect(screen.queryByText(/bundle savings|recovery discount/i)).not.toBeInTheDocument()
   })

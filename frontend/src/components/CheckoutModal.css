@@ -153,6 +153,20 @@
   opacity: 0.5;
 }
 
+.checkout-close-secondary {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  margin-top: 8px;
+}
+
+.checkout-close-secondary:hover:not(:disabled) {
+  color: var(--text);
+}
+
 .checkout-success-icon {
   width: 64px;
   height: 64px;

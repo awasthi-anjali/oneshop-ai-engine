@@ -51,6 +51,7 @@ export type ChatActionType =
   | 'COMPARE'
   | 'OPEN_PRODUCT'
   | 'VIEW_CART'
+  | 'OPEN_CHECKOUT'
   | 'PROPOSE_ADD_TO_CART'
   | 'PROPOSE_ADD_BUNDLE'
   | 'HANDOFF_SERVICE'
@@ -111,11 +112,12 @@ export interface ChatResponse {
   actions: ChatAction[]
   mode: 'ai' | 'fallback'
   suggested_actions: string[]
-  cart_updated: false
-  open_checkout: false
+  cart_updated: boolean
+  open_checkout: boolean
   selected_tool?: string | null
   cart_summary?: CartSummary | null
   cart_proposal?: CartProposal | null
+  checkout_profile?: CheckoutProfile | null
 }
 
 interface LegacyChatResponse {
@@ -153,6 +155,7 @@ interface WireV1ChatResponse {
   selected_tool?: string | null
   cart_summary?: CartSummary | null
   cart_proposal?: CartProposal | null
+  checkout_profile?: CheckoutProfile | null
 }
 
 export interface CustomerIntent {
@@ -304,6 +307,9 @@ export interface CheckoutResponse {
   one_time_total: number
   monthly_total: number
   message: string
+  receipt_from?: string
+  receipt_sent?: boolean
+  receipt_url?: string
 }
 
 export interface AbandonmentStatus {
@@ -385,12 +391,18 @@ const PERSONALIZATION_EVENT = 'oneshop-personalization-user'
 export type Channel = 'oneshop' | 'oneapp'
 
 export const DEMO_USERS = [
-  { id: 'user_001', name: 'Alex', description: 'Budget student', emoji: '🎓' },
-  { id: 'user_011', name: 'Dev', description: 'Tech enthusiast', emoji: '🚀' },
-  { id: 'user_021', name: 'Morgan', description: 'Business pro', emoji: '💼' },
-  { id: 'user_031', name: 'Greta', description: 'Senior', emoji: '🌿' },
-  { id: 'user_041', name: 'Chris', description: 'Family parent', emoji: '👨‍👩‍👧' },
+  { id: 'user_001', name: 'Anjali', full_name: 'Anjali', description: 'Budget student', emoji: '🎓', email: 'anjali00223@gmail.com', card_number: '4242424242424242' },
+  { id: 'user_011', name: 'Dev', full_name: 'Dev Patel', description: 'Tech enthusiast', emoji: '🚀', email: 'dev.patel@techmail.demo', card_number: '5555555555554444' },
+  { id: 'user_021', name: 'Morgan', full_name: 'Morgan Brooks', description: 'Business pro', emoji: '💼', email: 'morgan.brooks@workmail.demo', card_number: '378282246310005' },
+  { id: 'user_031', name: 'Greta', full_name: 'Greta Lindstrom', description: 'Senior', emoji: '🌿', email: 'greta.lindstrom@seniormail.demo', card_number: '6011111111111117' },
+  { id: 'user_041', name: 'Chris', full_name: 'Chris Nguyen', description: 'Family parent', emoji: '👨‍👩‍👧', email: 'chris.nguyen@familymail.demo', card_number: '4000000000009995' },
 ] as const
+
+export interface CheckoutProfile {
+  full_name: string
+  email: string
+  card_number: string
+}
 
 export function getPersonalizationUserId(): string {
   const stored = localStorage.getItem(PERSONALIZATION_USER_KEY)
@@ -808,11 +820,12 @@ export async function sendMessage(
       actions: raw.actions,
       mode: raw.mode,
       suggested_actions: raw.suggested_actions ?? [],
-      cart_updated: false,
-      open_checkout: false,
+      cart_updated: raw.cart_updated ?? false,
+      open_checkout: raw.open_checkout ?? false,
       selected_tool: raw.selected_tool,
       cart_summary: raw.cart_summary,
       cart_proposal: raw.cart_proposal,
+      checkout_profile: raw.checkout_profile ?? null,
     }
     storeSessionId(data.session_id)
     return data

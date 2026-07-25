@@ -1,4 +1,11 @@
 from app.models.schemas import CheckoutResponse, Product, ProductCategory
+from app.services.receipt_email_service import (
+    EVA_EMAIL,
+    EVA_NAME,
+    deliver_receipt_via_eva,
+    mask_email,
+    receipt_view_path,
+)
 from app.services.session_store import session_store
 
 
@@ -53,8 +60,39 @@ def complete_checkout(
     })
 
     items = list(cart)
+    delivery = deliver_receipt_via_eva(
+        session_id=sid,
+        order_id=order_id,
+        customer_name=customer_name,
+        email=email,
+        payment_last4=payment_last4,
+        items=items,
+        one_time_total=one_time_total,
+        monthly_total=monthly_total,
+        subtotal=subtotal,
+    )
     session_store.clear_cart(sid)
     session_store.clear_abandonment(sid)
+
+    masked_email = mask_email(email)
+    if delivery.get("inbox_delivered"):
+        receipt_note = (
+            f"{EVA_NAME} ({EVA_EMAIL}) sent your HTML receipt to {masked_email}'s inbox."
+        )
+        inbox_sent = True
+    else:
+        if delivery.get("delivery_error") == "resend_sandbox_recipient":
+            receipt_note = (
+                f"Receipt saved for {masked_email}. Resend test mode only delivers to the "
+                f"email on your Resend account — use that address at checkout, verify a domain "
+                f"at resend.com/domains, or set EVA_GMAIL_APP_PASSWORD for Gmail delivery."
+            )
+        else:
+            receipt_note = (
+                f"Receipt saved securely for {masked_email}. "
+                f"Inbox delivery failed — open the receipt link below, or check backend logs."
+            )
+        inbox_sent = False
 
     return CheckoutResponse(
         session_id=sid,
@@ -66,5 +104,8 @@ def complete_checkout(
         total=total,
         one_time_total=one_time_total,
         monthly_total=monthly_total,
-        message=f"Thank you {customer_name}! Order {order_id} confirmed. A receipt was sent to {email}.",
+        message=f"Thank you {customer_name}! Order {order_id} confirmed. {receipt_note}",
+        receipt_from=f"{EVA_NAME} <{EVA_EMAIL}>",
+        receipt_sent=inbox_sent,
+        receipt_url=receipt_view_path(order_id, sid),
     )

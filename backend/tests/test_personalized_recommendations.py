@@ -1,11 +1,20 @@
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models.schemas import RecommendationInteractionRequest
+from app.services.checkout_profile_store import reset_checkout_profile_overrides
 from app.services.interaction_store import InteractionStore
 from app.services.product_catalog import catalog
+
+
+@pytest.fixture(autouse=True)
+def _isolated_checkout_profiles():
+    reset_checkout_profile_overrides()
+    yield
+    reset_checkout_profile_overrides()
 
 
 def _client() -> TestClient:
@@ -23,12 +32,39 @@ def _event(user_id: str, event_type: str, product_id: str | None = None, **extra
     }
 
 
+def test_checkout_profile_api_and_chat_update():
+    client = _client()
+    profile = client.get("/api/recommendations/user_001/checkout-profile").json()
+    assert profile["full_name"] == "Anjali"
+    assert profile["email"] == "anjali00223@gmail.com"
+
+    updated = client.patch(
+        "/api/recommendations/user_001/checkout-profile",
+        json={"email": "alex.new@studentmail.demo"},
+    ).json()
+    assert updated["email"] == "alex.new@studentmail.demo"
+    assert updated["full_name"] == "Anjali"
+
+    chat = client.post(
+        "/api/chat",
+        json={
+            "message": "Change my card to 4242 4242 4242 9999",
+            "channel": "oneshop",
+            "user_id": "user_001",
+        },
+    ).json()
+    assert chat["checkout_profile"]["card_number"].endswith("9999")
+
+
 def test_demo_profiles_are_actual_catalog_personas_with_divergent_rankings():
     client = _client()
     profiles = client.get("/api/recommendations/demo-profiles").json()["profiles"]
     assert [profile["user_id"] for profile in profiles] == [
         "user_001", "user_011", "user_021", "user_031", "user_041"
     ]
+    assert profiles[0]["full_name"] == "Anjali"
+    assert profiles[0]["email"] == "anjali00223@gmail.com"
+    assert profiles[0]["card_number"].endswith("4242")
 
     rankings = {}
     for profile in profiles:

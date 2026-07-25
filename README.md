@@ -1,106 +1,85 @@
 # Omnichannel Consumer AI Engine
 
-AI-powered shopping intelligence engine for **OneShop (Web)** and **OneApp (Mobile)**.
+[![CI](https://github.com/awasthi-anjali/oneshop-ai-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/awasthi-anjali/oneshop-ai-engine/actions/workflows/ci.yml)
 
-## ShopAssist V1
+AI-powered shopping intelligence for **OneShop (Web)** and **OneApp (Mobile)** — personalized discovery, conversational shopping, smart cart, checkout, and cross-channel continuity.
 
-The current product slice is a bounded phone-and-plan purchase guide embedded in
-OneShop, with grounded recommendations, explicit cart confirmation, and an
-accessible consumer light theme.
+> **Demo catalog:** OneTel/USD data is synthetic. It is not current Deutsche Telekom inventory, pricing, availability, or eligibility.
 
-- [Product requirements](docs/shopassist/PRD.md)
-- [Implementation plan](docs/shopassist/IMPLEMENTATION_PLAN.md)
-- [Evaluation and golden scenarios](docs/shopassist/EVALUATION.md)
-- [Current-state audit](docs/shopassist/AUDIT.md)
-- [Demo script](docs/shopassist/DEMO.md)
-- [Implementation handoff](docs/shopassist/HANDOFF.md)
+## Features
 
-## Current Prototype Status
+| Area | What it does |
+|------|----------------|
+| **ShopAssist** | Embedded drawer assistant — structured shopping need, grounded phone/plan picks, compare, explicit cart confirmation |
+| **Personalized discovery** | “For You” panel with explainable reasons, five demo personas, SQLite interaction profiles |
+| **Next best action** | Contextual funnel nudges (browse → consider → cart → checkout) |
+| **Smart cart** | Rule-based bundles, cross-sell, abandonment recovery (10% return offer) |
+| **Checkout & receipts** | Two-step checkout; Eva-branded HTML receipt via **Resend** or **Gmail SMTP** after **Confirm order** |
+| **Omnichannel** | Shared `session_id` across OneShop (`/`) and OneApp (`/app`) with continue links |
+| **Voice (partial)** | Browser speech-to-text in ShopAssist (Chrome/Edge) |
 
-### 1. ShopAssist V1
-The commerce-bounded assistant runs in a persistent OneShop drawer, extracts a
-structured shopping need, returns grounded phone-and-plan picks, and requires
-explicit confirmation before an exact bundle cart mutation.
+## Documentation
 
-### 2. Personalized Discovery (prototype)
-- Browse all products with **Wishlist** and **Add to Cart** on each card
-- Wishlist, cart, and viewed products drive **intent detection**
-- **"For You"** panel on the right shows personalized recommendations with reasons
-- Product detail modal with click tracking
+- [Project guide (architecture & interview Q&A)](docs/PROJECT_GUIDE.md)
+- [ShopAssist PRD](docs/shopassist/PRD.md) · [Audit](docs/shopassist/AUDIT.md) · [Demo script](docs/shopassist/DEMO.md)
+- [Recommendations audit](docs/recommendations/AUDIT.md)
+- [Demo guardrails](docs/demo/GUARDRAILS.md)
 
-### 3. Next Best Action (prototype)
-- Contextual banner suggesting compare, add plan, checkout, bundle actions
-- Funnel stage detection (browse → consider → cart → checkout)
-
-### 4. Smart Cart & Checkout (prototype; not ShopAssist V1 scope)
-- **Smart Cart** panel in the right sidebar: bundle suggestions, nudge messages, AI checkout tips
-- **One-click "Add bundle to cart"** for phone+plan and accessory bundles
-- **Checkout modal** with demo payment flow, bundle savings, and order confirmation
-- **Cart abandonment tracking** — leaving with items in cart triggers a recovery banner with 10% discount on return
-
-### 5. AI Orchestrator (experimental)
-- **`GET /api/intelligence/profile`** — single AI call returns intent, recommendations, next actions, and smart cart together
-- **AI-first recommendations** — LLM picks product IDs; rules validate stock and exclusions
-- **RAG-lite retrieval** — semantic search narrows catalog focus before the LLM decides (when API key is set)
-- ShopAssist uses a bounded recommendation path with an explicit proposal and
-  confirmation boundary; chat requests cannot mutate the cart.
-
-### 6. Omnichannel Experience (OneShop Web + OneApp Mobile)
-- **OneShop Web** at `/` — desktop shopping experience with embedded ShopAssist drawer
-- **OneApp Mobile** at `/app` — mobile shell with bottom nav (Shop · Assist · Sync)
-- **Shared session** — same `session_id` = same cart, wishlist, viewed, AI recommendations
-- **Continue links** — copy or open cross-channel URLs with `?session_id=`
-- **Customer linking** — optional `customer_id` for persistent identity across devices
-- **Sync banner** — “Synced from OneApp Mobile — 2 items in your cart” when switching channels
-
-> The included OneTel/USD catalog is synthetic demo data. It is not current
-> Deutsche Telekom inventory, pricing, availability, or eligibility data.
-
-## Project Structure
+## Project structure
 
 ```
-├── backend/          # FastAPI + AI engine
+├── .github/workflows/   # CI (pytest + vitest + build)
+├── backend/             # FastAPI + AI engine
 │   ├── app/
-│   │   ├── data/           # Product catalog
-│   │   ├── models/         # Pydantic schemas
-│   │   ├── routers/        # API routes
-│   │   └── services/       # Catalog + conversational AI
-├── frontend/         # OneShop web chat UI (React + Vite)
-├── requirements.txt  # Python deps (backend) — install from root
+│   │   ├── routers/     # API routes
+│   │   └── services/    # ShopAssist, recommendations, cart, receipts
+│   ├── tests/           # pytest suite
+│   └── .env.example
+├── frontend/            # React + TypeScript + Vite
+├── docs/                # PRDs, audits, specs
+├── requirements.txt     # Python runtime deps
 └── problem_statement.txt
 ```
 
-## Setup (run in this order)
+## Setup
 
-This project has **two separate dependency systems**:
+Backend and frontend use **separate** dependency systems. Install both before running.
 
-| Part | File | Install command |
-|------|------|-----------------|
-| Backend (Python) | `requirements.txt` (project root) | `pip install -r requirements.txt` |
-| Frontend (React) | `frontend/package.json` | `npm install` (inside `frontend/`) |
+### 1. Backend
 
-You **must install dependencies before running** either part.
-
-### 1. Backend (install first)
-
-From the **project root**:
+From the **project root** (Python **3.12**):
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp backend/.env.example backend/.env   # optional: add OPENAI_API_KEY
+pip install -r backend/requirements.txt   # includes pytest for local tests
+cp backend/.env.example backend/.env
 cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-> **macOS note:** Use `python3` (not `python`). Run commands **one at a time** — don't paste the whole block including comment lines.
-
 API docs: http://localhost:8000/docs
 
-### 2. Frontend (OneShop)
+**Environment variables** (`backend/.env`):
 
-Requires [Node.js](https://nodejs.org) (v18+). In a **new terminal**:
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `OPENAI_API_KEY` | No | Enables LLM mode; rule-based fallback without it |
+| `OPENAI_MODEL` | No | Default: `gpt-4o-mini` |
+| `RESEND_API_KEY` | No | Send receipt emails via [Resend](https://resend.com) |
+| `EVA_GMAIL_APP_PASSWORD` | No | Send from `eva@gmail.com` via Gmail SMTP |
+| `CORS_ORIGINS` | No | Comma-separated frontend URLs for production |
+
+**Receipt email notes:**
+
+- Receipts send only after the user clicks **Confirm order** (step 2 of checkout).
+- Resend test mode delivers only to the email on your Resend account unless you verify a domain.
+- Without email keys configured, checkout still works and serves an HTML receipt link.
+
+### 2. Frontend
+
+Requires [Node.js](https://nodejs.org) 18+. In a **new terminal**:
 
 ```bash
 cd frontend
@@ -108,34 +87,51 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173
+| URL | Surface |
+|-----|---------|
+| http://localhost:5173 | OneShop Web |
+| http://localhost:5173/app | OneApp Mobile |
 
-## API Endpoints
+The Vite dev server proxies `/api` to `http://localhost:8000`.
+
+## Testing
+
+**Backend** (from repo root, venv active):
+
+```bash
+cd backend
+python -m pytest tests -q
+```
+
+**Frontend:**
+
+```bash
+cd frontend
+npm test -- --run
+npm run build
+```
+
+**CI:** On push/PR to `main`, GitHub Actions runs backend tests, frontend tests, and a production build (see `.github/workflows/ci.yml`).
+
+## API overview
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/chat` | Send a message to ShopAssist |
-| GET | `/api/chat/health` | Check AI mode (OpenAI vs fallback) |
-| GET | `/api/products` | Search/browse product catalog |
-| GET | `/api/products/{id}` | Get product details |
-| POST | `/api/customer/wishlist/toggle` | Add/remove wishlist item |
-| POST | `/api/customer/cart/add` | Add item to cart |
-| POST | `/api/customer/cart/add-bundle` | Add bundle products to cart |
-| POST | `/api/checkout/complete` | Complete checkout (demo payment) |
-| GET | `/api/checkout/abandonment-status` | Check cart abandonment / recovery offer |
-| POST | `/api/checkout/abandon` | Mark cart as abandoned |
-| GET | `/api/intelligence/profile` | **Unified AI orchestrator** (intent + recs + NBA + cart) |
-| GET | `/api/intelligence/smart-cart` | Bundles, nudges, checkout tips |
-| GET | `/api/intelligence/next-best-action` | Next best action suggestions |
+| POST | `/api/chat` | ShopAssist message |
+| GET | `/api/products` | Search / browse catalog |
+| POST | `/api/customer/cart/add` | Add to cart |
+| POST | `/api/customer/cart/add-bundle` | Add bundle |
+| POST | `/api/checkout/complete` | Place order + send receipt |
+| GET | `/api/checkout/receipt/{order_id}` | Session-scoped HTML receipt |
+| GET | `/api/recommendations/{user_id}` | Personalized “For You” feed |
+| POST | `/api/recommendations/interactions` | Track clicks, views, impressions |
+| GET | `/api/intelligence/profile` | Unified orchestrator (intent + recs + NBA + cart) |
+| GET | `/api/omnichannel/context` | Cross-channel sync status |
+| GET | `/api/health` | Service health + AI mode |
 
-## How Personalized Discovery Works (no API key)
+Full reference: http://localhost:8000/docs
 
-1. User wishlists products on the **Shop** tab
-2. Backend extracts intent: categories, brands, tags, price range
-3. Recommendation engine scores catalog items by tag overlap, brand match, cross-sell (phone → plan/accessory), and price fit
-4. Right panel updates with ranked picks and "why" reasons
-
-### Example Chat Request
+### Example: ShopAssist chat
 
 ```bash
 curl -X POST http://localhost:8000/api/chat \
@@ -143,32 +139,48 @@ curl -X POST http://localhost:8000/api/chat \
   -d '{"message": "Show me phones under $500", "channel": "oneshop"}'
 ```
 
-| GET | `/api/omnichannel/context` | Cross-channel sync status + continue URLs |
-| POST | `/api/omnichannel/link` | Link customer_id to session |
-| GET | `/api/omnichannel/continue` | URL to continue on other channel |
-
 ### Omnichannel demo
 
-1. **OneShop Web:** http://localhost:5173 — add iPhone to cart
-2. Click **Sync** tab → **Copy mobile link** or **Open on OneApp Mobile**
-3. **OneApp:** http://localhost:5173/app?session_id=... — same cart appears
-4. Purple **Omnichannel sync** banner shows on both channels
+1. Open OneShop, add items to cart.
+2. Go to **Sync** → copy or open the OneApp link (`/app?session_id=...`).
+3. The same cart and recommendations appear on the mobile shell.
 
-## Roadmap (Remaining Capabilities)
+## Demo personas
 
-- [x] Embedded, commerce-bounded ShopAssist V1
-- [x] Structured phone-and-plan shopping need
-- [x] Grounded shortlist and comparison
-- [x] Explicit cart proposal and confirmation
-- [x] Accessible consumer light theme
-- [x] Personalized Discovery prototype
-- [x] Next Best Action prototype
-- [x] Smart Cart & Checkout prototype
-- [x] Omnichannel Experience (OneShop Web + OneApp Mobile)
+Five selectable profiles (`user_001` … `user_041`) with different recommendation histories. Default shopper **Anjali** (`user_001`) includes saved checkout name, email, and card prefill.
 
-## Tech Stack
+## Deployment
 
-- **Backend:** Python, FastAPI, OpenAI API, Pydantic
-- **Frontend:** React, TypeScript, Vite
-- **AI:** Tool-calling agent (search, compare, product details)
-# oneshop-ai-engine
+| Component | Config |
+|-----------|--------|
+| Backend | [Railway](railway.json) — `uvicorn` on `$PORT` |
+| Frontend | [Vercel](frontend/vercel.json) — proxies `/api` to Railway |
+
+Set production `CORS_ORIGINS` and API keys on the host. Update the Railway URL in `frontend/vercel.json` if your backend URL changes.
+
+## Roadmap
+
+**Implemented (hackathon core):**
+
+- [x] ShopAssist V1 (grounded recs, compare, cart confirmation)
+- [x] Personalized discovery + explainable recommendations
+- [x] Next best action + smart cart + checkout
+- [x] Omnichannel (OneShop + OneApp)
+- [x] HTML receipt email (Resend / Gmail)
+- [x] GitHub Actions CI
+
+**Bonus / production (not implemented):**
+
+- [ ] Multi-agent architecture
+- [ ] Real-time push (SSE/WebSocket) for recommendations
+- [ ] A/B testing framework
+- [ ] Continuous offline learning pipeline
+- [ ] Durable session store (Redis/PostgreSQL)
+- [ ] Full voice commerce beyond browser STT
+
+## Tech stack
+
+- **Backend:** Python 3.12, FastAPI, Pydantic, OpenAI (optional), SQLite (interactions + behavioral memory)
+- **Frontend:** React 18, TypeScript, Vite, Vitest
+- **Email:** Resend API or Gmail SMTP (Eva sender identity)
+- **AI:** Tool-calling ShopAssist + rule-validated recommendations and guardrails

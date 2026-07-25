@@ -88,9 +88,13 @@ class SessionStore:
 
     def add_bundle_to_cart(self, session_id: str, product_ids: list[str]) -> list[str]:
         self.get_or_create(session_id)
+        last_added: str | None = None
         for pid in product_ids:
             if catalog.get_by_id(pid):
                 self._carts[session_id].add(pid)
+                last_added = pid
+        if last_added:
+            self._last_cart_add[session_id] = last_added
         self._touch_cart(session_id)
         return list(self._carts[session_id])
 

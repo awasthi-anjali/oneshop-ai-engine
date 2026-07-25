@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
-import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -12,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config import settings
 from app.services.product_catalog import catalog
+from app.services.recommendation_db import close_recommendation_db, get_recommendation_db
 
 
 PriceSensitivity = Literal["unknown", "moderate", "high", "extreme"]
@@ -130,11 +129,7 @@ class BehavioralMemoryStore:
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         self.db_path = str(db_path or settings.recommendation_db_path)
-        if self.db_path != ":memory:":
-            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._lock = threading.RLock()
+        self._conn, self._lock = get_recommendation_db(self.db_path)
         self._initialize()
 
     def _initialize(self) -> None:
@@ -227,8 +222,7 @@ class BehavioralMemoryStore:
         return deleted
 
     def close(self) -> None:
-        with self._lock:
-            self._conn.close()
+        close_recommendation_db(self.db_path)
 
 
 def bounded_memory_context(
