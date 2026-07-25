@@ -726,11 +726,19 @@ class ShopAssistService:
 
     @staticmethod
     def _is_identity_question(text: str) -> bool:
-        return bool(re.search(r"\b(?:who are you|what(?:s| is) your name|your name)\b", text))
+        return bool(re.search(
+            r"\b(?:who\s+(?:are|r)\s+you|who\s+r\s+u|what\s+(?:are|r)\s+you|"
+            r"what(?:s| is)\s+(?:your|ur)\s+name|(?:your|ur)\s+name)\b",
+            text,
+        ))
 
     @staticmethod
     def _is_capabilities_question(text: str) -> bool:
-        return bool(re.search(r"\b(?:what can you (?:do|help with|offer)|how can you help|what do you offer)\b", text))
+        return bool(re.search(
+            r"\b(?:what can (?:you|u) (?:do|help with|offer)|how can (?:you|u) help|"
+            r"what do (?:you|u) offer|help(?:\s+me)?|what (?:are|r) your capabilities)\b",
+            text,
+        ))
 
     @staticmethod
     def _is_explanation_question(text: str) -> bool:

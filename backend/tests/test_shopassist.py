@@ -323,6 +323,25 @@ def test_capabilities_identity_and_explanation_do_not_replay_stale_phone_search(
 
 
 @pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("who r u?", "My name is Ava"),
+        ("who r u", "My name is Ava"),
+        ("what's ur name", "My name is Ava"),
+        ("what can u do?", "I'm Ava"),
+        ("help me", "I'm Ava"),
+    ],
+)
+def test_common_conversational_shorthand_is_state_safe(client, message, expected):
+    first = post(client, "Android phone under $200").json()
+    response = post(client, message, first["session_id"]).json()
+    assert response["status"] == "recommended"
+    assert response["recommendations"] == []
+    assert response["actions"] == []
+    assert expected in response["message"]
+
+
+@pytest.mark.parametrize(
     "transcript",
     [
         "hay hello",
