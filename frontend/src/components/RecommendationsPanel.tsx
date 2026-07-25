@@ -119,7 +119,7 @@ export default function RecommendationsPanel({
 
       {intent && (
         <div className="rec-intent">
-          <span className="rec-intent-label">Current shopping intent</span>
+          <span className="rec-intent-label">Why this recommendation ?</span>
           <p>{intent.summary}</p>
           {intent.ecosystem && <p className="rec-ecosystem">🏷 {intent.ecosystem}</p>}
           {intent.tags.length > 0 && (

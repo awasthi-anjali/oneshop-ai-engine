@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import threading
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import Any
 from app.config import settings
 from app.models.schemas import RecommendationInteractionRequest
 from app.services.product_catalog import catalog
+from app.services.recommendation_db import close_recommendation_db, get_recommendation_db
 
 
 EVENT_WEIGHTS = {
@@ -26,7 +26,7 @@ EVENT_WEIGHTS = {
 
 
 DEMO_PROFILES = [
-    {"user_id": "user_001", "name": "Alex", "label": "Budget Student", "emoji": "🎓"},
+    {"user_id": "user_001", "name": "Anjali", "label": "Budget Student", "emoji": "🎓"},
     {"user_id": "user_011", "name": "Dev", "label": "Tech Enthusiast", "emoji": "🚀"},
     {"user_id": "user_021", "name": "Morgan", "label": "Business Pro", "emoji": "💼"},
     {"user_id": "user_031", "name": "Greta", "label": "Senior", "emoji": "👵"},
@@ -48,11 +48,7 @@ class InteractionStore:
 
     def __init__(self, db_path: str | Path | None = None, seed_demo: bool = True) -> None:
         self.db_path = str(db_path or settings.recommendation_db_path)
-        if self.db_path != ":memory:":
-            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._lock = threading.RLock()
+        self._conn, self._lock = get_recommendation_db(self.db_path)
         self._initialize()
         if seed_demo:
             self.seed_demo_profiles()
@@ -202,8 +198,7 @@ class InteractionStore:
         }
 
     def close(self) -> None:
-        with self._lock:
-            self._conn.close()
+        close_recommendation_db(self.db_path)
 
 
 interaction_store = InteractionStore()

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import HTMLResponse
 
 from app.models.schemas import (
     AbandonmentResponse,
@@ -13,6 +14,7 @@ from app.models.schemas import (
     SmartCartResponse,
 )
 from app.services.checkout_service import complete_checkout
+from app.services.receipt_email_service import get_receipt_html
 from app.services.next_best_action_service import get_next_best_actions
 from app.services.omnichannel_service import get_omnichannel_context
 from app.services.orchestrator_service import get_intelligence_profile
@@ -118,6 +120,16 @@ async def checkout_complete(request: CheckoutRequest) -> CheckoutResponse:
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/api/checkout/receipt/{order_id}", response_class=HTMLResponse)
+async def view_receipt(order_id: str, session_id: str = Query(..., min_length=1)) -> HTMLResponse:
+    """Session-scoped HTML receipt viewer — Eva delivery, no public PII exposure."""
+    sid = session_store.get_or_create(session_id)
+    html = get_receipt_html(order_id, sid)
+    if not html:
+        raise HTTPException(status_code=404, detail="Receipt not found for this session")
+    return HTMLResponse(content=html)
 
 
 @router.post("/api/checkout/abandon", response_model=AbandonmentResponse)

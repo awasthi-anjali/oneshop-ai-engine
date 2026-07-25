@@ -71,7 +71,6 @@ LEGACY_UNSUPPORTED_TOKENS: tuple[str, ...] = (
     "coding",
     "recipe",
     "weather",
-    "news",
     "joke",
 )
 

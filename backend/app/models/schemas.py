@@ -163,6 +163,7 @@ class ShopAssistActionType(str, Enum):
     COMPARE = "COMPARE"
     OPEN_PRODUCT = "OPEN_PRODUCT"
     VIEW_CART = "VIEW_CART"
+    OPEN_CHECKOUT = "OPEN_CHECKOUT"
     PROPOSE_ADD_TO_CART = "PROPOSE_ADD_TO_CART"
     PROPOSE_ADD_BUNDLE = "PROPOSE_ADD_BUNDLE"
     HANDOFF_SERVICE = "HANDOFF_SERVICE"
@@ -189,6 +190,20 @@ class CartProposal(BaseModel):
     excluded_product_ids: list[str] = Field(default_factory=list)
     one_time_total: float = 0
     monthly_total: float = 0
+
+
+class CheckoutProfile(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=120)
+    email: str = Field(..., min_length=3, max_length=120)
+    card_number: str = Field(..., min_length=4, max_length=19)
+
+
+class CheckoutProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str | None = Field(default=None, min_length=2, max_length=120)
+    email: str | None = Field(default=None, min_length=3, max_length=120)
+    card_number: str | None = Field(default=None, min_length=4, max_length=19)
 
 
 class ChatStatus(str, Enum):
@@ -220,6 +235,7 @@ class ChatResponse(BaseModel):
     selected_tool: str | None = None
     cart_summary: CartSummary | None = None
     cart_proposal: CartProposal | None = None
+    checkout_profile: CheckoutProfile | None = None
 
 
 class CartConfirmationRequest(BaseModel):
@@ -357,6 +373,9 @@ class CheckoutResponse(BaseModel):
     one_time_total: float = 0
     monthly_total: float = 0
     message: str
+    receipt_from: str = ""
+    receipt_sent: bool = False
+    receipt_url: str = ""
 
 
 class AbandonmentResponse(BaseModel):

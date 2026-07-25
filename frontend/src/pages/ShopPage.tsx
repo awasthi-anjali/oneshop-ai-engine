@@ -47,7 +47,6 @@ import CatalogFilters from '../components/CatalogFilters'
 import CheckoutModal from '../components/CheckoutModal'
 import CompareModal from '../components/CompareModal'
 import NextBestActionBanner from '../components/NextBestActionBanner'
-import OmnichannelSyncBanner from '../components/OmnichannelSyncBanner'
 import ProductDetailModal from '../components/ProductDetailModal'
 import ProductSearchBar from '../components/ProductSearchBar'
 import ProductShopCard from '../components/ProductShopCard'
@@ -65,6 +64,7 @@ import {
   type PriceRange,
   type SortOption,
 } from '../utils/catalogFilters'
+import { applyCheckoutProfileFromChat } from '../checkoutProfile'
 import { addRecentSearch } from '../utils/recentSearches'
 import './ShopPage.css'
 
@@ -148,8 +148,6 @@ export default function ShopPage({
     cartItems: [],
   })
   const [abandonment, setAbandonment] = useState<AbandonmentStatus | null>(null)
-  const [syncMessage, setSyncMessage] = useState('')
-  const [channelsUsed, setChannelsUsed] = useState<string[]>([])
   const [showCheckout, setShowCheckout] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
@@ -241,8 +239,6 @@ export default function ShopPage({
         cartItems: profile.cart,
       })
       if (profile.abandonment?.is_abandoned) setAbandonment(profile.abandonment)
-      setSyncMessage(profile.sync_message ?? '')
-      setChannelsUsed(profile.channels_used ?? [])
     } finally {
       setRecLoading(false)
     }
@@ -603,6 +599,16 @@ export default function ShopPage({
           mode: response.mode,
         },
       ])
+      if (response.cart_summary?.items?.length) {
+        setCartProducts(response.cart_summary.items)
+        setCartIds(new Set(response.cart_summary.items.map((product) => product.id)))
+      }
+      if (response.open_checkout) {
+        setShowCheckout(true)
+      }
+      if (response.checkout_profile) {
+        applyCheckoutProfileFromChat(personalizationUserId, response.checkout_profile)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'ShopAssist could not respond.'
       setAssistError(message.replace(/port\s*8000/gi, 'service'))
@@ -638,6 +644,10 @@ export default function ShopPage({
     if (action.type === 'OPEN_PRODUCT') {
       const product = products.find((item) => item.id === action.product_ids[0])
       if (product) setSelectedProduct(product)
+      return
+    }
+    if (action.type === 'OPEN_CHECKOUT') {
+      setShowCheckout(true)
       return
     }
     if (action.type === 'REFINE') setDraft(action.label)
@@ -824,11 +834,6 @@ export default function ShopPage({
           {personalizationError && (
             <div className="personalization-error" role="status">{personalizationError}</div>
           )}
-          <OmnichannelSyncBanner
-            message={syncMessage}
-            channelsUsed={channelsUsed}
-            currentChannel={channel}
-          />
 
           {abandonment?.is_abandoned && (
             <AbandonmentBanner
@@ -1293,6 +1298,7 @@ export default function ShopPage({
         open={showCheckout}
         cart={cartProducts}
         sessionId={sessionId}
+        userId={personalizationUserId}
         oneTimeTotal={smartCart.oneTimeTotal}
         monthlyTotal={smartCart.monthlyTotal}
         onClose={() => setShowCheckout(false)}

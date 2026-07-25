@@ -24,6 +24,7 @@ from app.models.schemas import (
     CartConfirmationResponse,
     CartProposal,
     CartSummary,
+    CheckoutProfile,
     NeedProfile,
     Product,
     ProductCategory,
@@ -45,6 +46,8 @@ from app.services.behavioral_memory import (
     bounded_memory_context,
     deterministic_memory_patch,
 )
+from app.services.cart_proposal_store import CartProposalStore, cart_proposal_store
+from app.services.checkout_profile_store import get_checkout_profile, update_checkout_profile
 from app.services.personalized_recommendation import (
     bounded_preference_context,
     resolve_profile_session,
@@ -92,24 +95,17 @@ class _ComposedResponse(BaseModel):
     message: str = Field(..., min_length=1, max_length=600)
 
 
-@dataclass
-class _CartProposalRecord:
-    proposal: CartProposal
-    session_id: str
-    user_id: str | None
-    created_at: float = field(default_factory=time.monotonic)
-    consumed: bool = False
-    result: CartConfirmationResponse | None = None
-
-
 class ShopAssistService:
-    def __init__(self, memory_store: BehavioralMemoryStore | None = None) -> None:
+    def __init__(
+        self,
+        memory_store: BehavioralMemoryStore | None = None,
+        proposal_store: CartProposalStore | None = None,
+    ) -> None:
         self._states: dict[str, _State] = {}
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._memory_store = memory_store or behavioral_memory_store
+        self._proposal_store = proposal_store or cart_proposal_store
         self._memory_tasks: set[asyncio.Task] = set()
-        self._cart_proposals: dict[str, _CartProposalRecord] = {}
-        self._confirmation_keys: dict[tuple[str, str], CartConfirmationResponse] = {}
         self._client = (
             AsyncOpenAI(api_key=settings.openai_api_key, timeout=settings.openai_timeout_seconds)
             if settings.openai_api_key else None
@@ -148,22 +144,21 @@ class ShopAssistService:
             else session_store.get_or_create(request.session_id)
         )
         async with self._locks[sid]:
-            record = self._cart_proposals.get(request.proposal_id)
+            record = self._proposal_store.get(request.proposal_id)
             if (
                 not record
-                or time.monotonic() - record.created_at > 900
+                or time.time() - record.created_at > 900
                 or record.session_id != sid
                 or record.user_id != request.user_id
             ):
                 raise ValueError("Cart proposal is missing, stale, or belongs to another user.")
 
-            replay_key = (request.proposal_id, request.idempotency_key)
-            replay = self._confirmation_keys.get(replay_key)
+            replay = self._proposal_store.get_replay(request.proposal_id, request.idempotency_key)
             if replay:
                 return replay.model_copy(update={"idempotent_replay": True})
             if record.consumed and record.result:
                 result = record.result.model_copy(update={"idempotent_replay": True})
-                self._confirmation_keys[replay_key] = result
+                self._proposal_store.save_replay(request.proposal_id, request.idempotency_key, result)
                 return result
 
             products = catalog.get_by_ids(record.proposal.product_ids)
@@ -194,7 +189,8 @@ class ShopAssistService:
             )
             record.consumed = True
             record.result = result
-            self._confirmation_keys[replay_key] = result
+            self._proposal_store.mark_consumed(request.proposal_id, result)
+            self._proposal_store.save_replay(request.proposal_id, request.idempotency_key, result)
             return result
 
     async def wait_for_memory_updates(self) -> None:
@@ -229,6 +225,23 @@ class ShopAssistService:
         if conversational_response is not None:
             return conversational_response
 
+        if request.user_id and self._is_checkout_profile_update(lowered, text):
+            return self._checkout_profile_update_response(sid, state, text, request.user_id)
+
+        cart_action = self._detect_cart_action(lowered)
+        ai_result: tuple[str, dict[str, Any]] | None = None
+        if cart_action is None and self._might_need_checkout_ai(lowered):
+            ai_result = await self._ai_parse(text, assistant_context)
+            if ai_result is not None:
+                if ai_result[0] == "checkout":
+                    cart_action = "checkout"
+                elif ai_result[0] == "cart_lookup":
+                    cart_action = "cart_lookup"
+
+        if cart_action == "checkout":
+            mode = ChatMode.AI if ai_result is not None else ChatMode.FALLBACK
+            return self._checkout_response(sid, state, text, request.user_id, mode)
+
         deterministic_intent = self._intent(lowered)
         reference_patch = self._memory_reference_patch(
             lowered,
@@ -246,17 +259,22 @@ class ShopAssistService:
         if deterministic_intent == "ambiguous" and state.need.categories:
             deterministic_intent = "shopping"
 
-        ai_result: tuple[str, dict[str, Any]] | None = None
-        if deterministic_intent == "ambiguous":
+        if ai_result is None and deterministic_intent == "ambiguous":
             ai_result = await self._ai_parse(text, assistant_context)
             if ai_result is not None:
-                deterministic_intent = ai_result[0]
+                if ai_result[0] == "checkout":
+                    mode = ChatMode.AI
+                    return self._checkout_response(sid, state, text, request.user_id, mode)
+                if ai_result[0] == "cart_lookup":
+                    cart_action = "cart_lookup"
+                else:
+                    deterministic_intent = ai_result[0]
             else:
                 deterministic_intent = "unsupported"
-        if deterministic_intent != "shopping":
+        if deterministic_intent != "shopping" and cart_action != "cart_lookup":
             return self._boundary_response(sid, state, text, deterministic_intent)
 
-        if self._is_cart_lookup(lowered):
+        if cart_action == "cart_lookup" or self._is_cart_lookup(lowered):
             state.turns.append({"role": "user", "content": text})
             summary = self._cart_summary(sid)
             smart = get_smart_cart(sid, request.user_id)
@@ -402,7 +420,156 @@ class ShopAssistService:
             return "shopping"
         return "ambiguous"
 
+    def _is_checkout_profile_update(self, lowered: str, text: str) -> bool:
+        if any(
+            phrase in lowered
+            for phrase in (
+                "change my email",
+                "update my email",
+                "my email is",
+                "set my email",
+                "change my name",
+                "update my name",
+                "my name is",
+                "set my name",
+                "change my card",
+                "update my card",
+                "card number",
+                "payment card",
+                "billing email",
+                "checkout email",
+            )
+        ):
+            return True
+        if "@" in text and any(word in lowered for word in ("email", "mail", "receipt", "checkout")):
+            return True
+        return bool(re.search(r"\b(?:card|payment|credit)\b", lowered) and re.search(r"\d{4}", text))
+
+    def _parse_checkout_profile_patch(self, text: str) -> dict[str, str]:
+        patch: dict[str, str] = {}
+        lowered = text.lower()
+
+        email_match = re.search(r"[\w.+-]+@[\w.-]+\.\w+", text)
+        if email_match:
+            patch["email"] = email_match.group(0)
+
+        name_match = re.search(
+            r"(?:my name is|change my name to|update my name to|call me)\s+(.+?)(?:\.|$| and |,)",
+            text,
+            re.I,
+        )
+        if name_match:
+            patch["full_name"] = " ".join(name_match.group(1).strip().split())
+
+        card_match = re.search(r"\b(\d[\d\s-]{11,18}\d)\b", text)
+        if card_match and any(word in lowered for word in ("card", "payment", "credit", "visa", "mastercard")):
+            patch["card_number"] = re.sub(r"\D", "", card_match.group(1))
+
+        return patch
+
+    def _checkout_profile_update_response(
+        self,
+        sid: str,
+        state: _State,
+        text: str,
+        user_id: str,
+    ) -> ChatResponse:
+        state.turns.append({"role": "user", "content": text})
+        patch = self._parse_checkout_profile_patch(text)
+        if not patch:
+            message = (
+                "Tell me what to update for checkout, for example "
+                "\"Change my email to alex@example.demo\" or "
+                "\"Update my card to 4242 4242 4242 4242\"."
+            )
+            profile = get_checkout_profile(user_id)
+            return self._response(
+                sid,
+                state,
+                ChatStatus.CLARIFYING,
+                message,
+                [],
+                [ShopAssistAction(type=ShopAssistActionType.REFINE, label="Update checkout email")],
+                ChatMode.FALLBACK,
+                selected_tool="checkout_profile",
+                checkout_profile=CheckoutProfile(**profile),
+            )
+
+        updated = update_checkout_profile(user_id, patch)
+        updates: list[str] = []
+        if "full_name" in patch:
+            updates.append(f"name to **{updated['full_name']}**")
+        if "email" in patch:
+            updates.append(f"email to **{updated['email']}**")
+        if "card_number" in patch:
+            last4 = updated["card_number"][-4:]
+            updates.append(f"card ending in **{last4}**")
+        message = "Updated your checkout " + ", ".join(updates) + "."
+        return self._response(
+            sid,
+            state,
+            ChatStatus.RECOMMENDED,
+            message,
+            [],
+            [],
+            ChatMode.FALLBACK,
+            selected_tool="checkout_profile",
+            checkout_profile=CheckoutProfile(**updated),
+        )
+
+    def _detect_cart_action(self, text: str) -> str | None:
+        if self._is_checkout_intent(text):
+            return "checkout"
+        if self._is_cart_lookup(text):
+            return "cart_lookup"
+        return None
+
+    @staticmethod
+    def _might_need_checkout_ai(text: str) -> bool:
+        hints = (
+            "pay", "payment", "order", "finish", "finalize", "purchase",
+            "complete", "ready", "checkout", "check out", "proceed",
+        )
+        return any(hint in text for hint in hints)
+
+    def _is_checkout_intent(self, text: str) -> bool:
+        if any(
+            phrase in text
+            for phrase in (
+                "checkout",
+                "check out",
+                "pay now",
+                "ready to pay",
+                "ready to buy",
+                "complete order",
+                "complete my order",
+                "place order",
+                "place my order",
+                "finalize order",
+                "finalize purchase",
+                "finalize my order",
+                "proceed to payment",
+                "proceed to checkout",
+                "want to pay",
+                "make the purchase",
+                "complete purchase",
+                "complete checkout",
+            )
+        ):
+            return True
+        if "finalize" in text and any(
+            word in text for word in ("order", "purchase", "payment", "checkout", "cart")
+        ):
+            return True
+        if "finish" in text and any(
+            word in text for word in ("order", "purchase", "payment", "checkout", "buying")
+        ):
+            return True
+        return bool(re.search(r"\b(?:pay|buy)\b.*\b(?:cart|order|now)\b", text))
+
     def _is_cart_lookup(self, text: str) -> bool:
+        if self._is_checkout_intent(text):
+            return False
         return any(
             phrase in text
             for phrase in (
@@ -422,6 +589,50 @@ class ShopAssistService:
                 "help me choose a compatible phone and plan for my cart",
                 "ask about cart",
             )
+        )
+
+    def _checkout_response(
+        self,
+        sid: str,
+        state: _State,
+        text: str,
+        user_id: str | None,
+        mode: ChatMode,
+    ) -> ChatResponse:
+        state.turns.append({"role": "user", "content": text})
+        summary = self._cart_summary(sid)
+        if not summary.items:
+            message = (
+                "Your cart is empty. Add products first, then ask me to checkout."
+            )
+            return self._response(
+                sid,
+                state,
+                ChatStatus.NO_MATCH,
+                message,
+                [],
+                [ShopAssistAction(type=ShopAssistActionType.REFINE, label="Help me find products")],
+                mode,
+                selected_tool="checkout",
+                cart_summary=summary,
+                open_checkout=False,
+            )
+
+        message = (
+            self._cart_summary_message(summary)
+            + " Opening checkout so you can complete payment."
+        )
+        return self._response(
+            sid,
+            state,
+            ChatStatus.RECOMMENDED,
+            message,
+            [],
+            [ShopAssistAction(type=ShopAssistActionType.OPEN_CHECKOUT, label="Proceed to checkout")],
+            mode,
+            selected_tool="checkout",
+            cart_summary=summary,
+            open_checkout=True,
         )
 
     def _conversational_response(
@@ -553,8 +764,12 @@ class ShopAssistService:
             raw = json.loads(completion.choices[0].message.content or "{}")
             intent = raw.get("intent")
             patch = raw.get("need_patch", {})
-            if intent not in {"shopping", "unsupported", "service"} or not isinstance(patch, dict):
+            if intent not in {"shopping", "checkout", "cart_lookup", "unsupported", "service"}:
                 return None
+            if not isinstance(patch, dict):
+                return None
+            if intent in {"checkout", "cart_lookup", "unsupported", "service"}:
+                return intent, {}
             validated = NeedProfile(**patch).model_dump(exclude_none=True, exclude_defaults=True)
             return intent, validated
         except Exception as exc:
@@ -1401,19 +1616,7 @@ class ShopAssistService:
             products,
             [product.id for product in products if product.id in existing],
         )
-        if len(self._cart_proposals) >= 500:
-            oldest_id = next(iter(self._cart_proposals))
-            self._cart_proposals.pop(oldest_id, None)
-            stale_keys = [
-                key for key in self._confirmation_keys if key[0] == oldest_id
-            ]
-            for key in stale_keys:
-                self._confirmation_keys.pop(key, None)
-        self._cart_proposals[proposal_id] = _CartProposalRecord(
-            proposal=proposal,
-            session_id=session_id,
-            user_id=user_id,
-        )
+        self._proposal_store.save(proposal_id, session_id, user_id, proposal)
         return proposal
 
     def _proposal_message(self, proposal: CartProposal) -> str:
@@ -1498,6 +1701,8 @@ class ShopAssistService:
         selected_tool: str | None = None,
         cart_summary: CartSummary | None = None,
         cart_proposal: CartProposal | None = None,
+        open_checkout: bool = False,
+        checkout_profile: CheckoutProfile | None = None,
     ) -> ChatResponse:
         state.turns.append({"role": "assistant", "content": content})
         state.turns = state.turns[-12:]
@@ -1512,10 +1717,11 @@ class ShopAssistService:
             mode=mode,
             suggested_actions=[a.label for a in actions],
             cart_updated=False,
-            open_checkout=False,
+            open_checkout=open_checkout,
             selected_tool=selected_tool,
             cart_summary=cart_summary,
             cart_proposal=cart_proposal,
+            checkout_profile=checkout_profile,
         )
 
 

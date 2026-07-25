@@ -1,12 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CheckoutResponse, Product } from '../api'
 import { completeCheckout } from '../api'
+import {
+  fetchCheckoutProfile,
+  formatCardNumber,
+  saveCheckoutProfile,
+} from '../checkoutProfile'
 import './CheckoutModal.css'
 
 interface Props {
   open: boolean
   cart: Product[]
   sessionId: string | null
+  userId: string
   oneTimeTotal: number
   monthlyTotal: number
   onClose: () => void
@@ -17,6 +23,7 @@ export default function CheckoutModal({
   open,
   cart,
   sessionId,
+  userId,
   oneTimeTotal,
   monthlyTotal,
   onClose,
@@ -26,17 +33,64 @@ export default function CheckoutModal({
   const [email, setEmail] = useState('')
   const [card, setCard] = useState('')
   const [loading, setLoading] = useState(false)
+  const [profileLoading, setProfileLoading] = useState(false)
   const [error, setError] = useState('')
   const [order, setOrder] = useState<CheckoutResponse | null>(null)
+  const [step, setStep] = useState<'details' | 'confirm'>('details')
+
+  useEffect(() => {
+    if (!open) return
+    setStep('details')
+    setOrder(null)
+    setError('')
+    let cancelled = false
+    setProfileLoading(true)
+    fetchCheckoutProfile(userId)
+      .then((profile) => {
+        if (cancelled) return
+        setName(profile.full_name)
+        setEmail(profile.email)
+        setCard(formatCardNumber(profile.card_number))
+      })
+      .finally(() => {
+        if (!cancelled) setProfileLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, userId])
+
+  const persistProfile = async (patch: {
+    full_name?: string
+    email?: string
+    card_number?: string
+  }) => {
+    await saveCheckoutProfile(userId, patch)
+  }
 
   if (!open) return null
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleContinue = (e: React.FormEvent) => {
     e.preventDefault()
+    setError('')
+    if (!name.trim() || !email.trim()) {
+      setError('Enter your name and email to continue.')
+      return
+    }
+    setStep('confirm')
+  }
+
+  const handleConfirmOrder = async () => {
     setError('')
     setLoading(true)
     try {
-      const last4 = card.replace(/\D/g, '').slice(-4) || '4242'
+      const cardDigits = card.replace(/\D/g, '')
+      await persistProfile({
+        full_name: name.trim(),
+        email: email.trim(),
+        card_number: cardDigits,
+      })
+      const last4 = cardDigits.slice(-4) || '4242'
       const result = await completeCheckout(sessionId, name.trim(), email.trim(), last4)
       setOrder(result)
       onSuccess(result)
@@ -55,6 +109,24 @@ export default function CheckoutModal({
           <h2>Order Confirmed!</h2>
           <p className="order-id">Order {order.order_id}</p>
           <p>{order.message}</p>
+          {order.receipt_sent ? (
+            <p className="checkout-subtitle">Check your Gmail inbox for the HTML receipt from Eva.</p>
+          ) : (
+            <p className="checkout-subtitle">
+              Inbox delivery is not configured on the server yet. Use the receipt link below.
+            </p>
+          )}
+          {order.receipt_url && (
+            <p className="checkout-subtitle">
+              <a
+                href={order.receipt_url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View HTML receipt from {order.receipt_from || 'Eva'}
+              </a>
+            </p>
+          )}
           <div className="checkout-summary">
             {order.one_time_total > 0 && (
               <div className="summary-row total">
@@ -109,32 +181,71 @@ export default function CheckoutModal({
               <span>${monthlyTotal.toFixed(2)}/month</span>
             </div>
           )}
-          <p className="checkout-subtitle">No promotional discount is assumed.</p>
+          <p className="checkout-subtitle">Receipts are sent by Eva (eva@gmail.com) after you confirm the order.</p>
         </div>
 
-        <form className="checkout-form" onSubmit={handleSubmit}>
+        {step === 'details' ? (
+        <form className="checkout-form" onSubmit={handleContinue}>
           <label>
             Full name
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              disabled={profileLoading}
+            />
           </label>
           <label>
             Email
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={profileLoading}
+            />
           </label>
           <label>
             Card number (demo)
             <input
               value={card}
-              onChange={(e) => setCard(e.target.value)}
+              onChange={(e) => setCard(formatCardNumber(e.target.value))}
               placeholder="4242 4242 4242 4242"
-              maxLength={19}
+              maxLength={23}
+              disabled={profileLoading}
             />
           </label>
           {error && <p className="checkout-error">{error}</p>}
-          <button type="submit" className="checkout-submit" disabled={loading || cart.length === 0}>
-            {loading ? 'Processing…' : 'Confirm demo order'}
+          <button type="submit" className="checkout-submit" disabled={profileLoading || cart.length === 0}>
+            Continue
           </button>
         </form>
+        ) : (
+        <div className="checkout-form">
+          <div className="checkout-summary">
+            <p className="checkout-subtitle"><strong>{name.trim()}</strong></p>
+            <p className="checkout-subtitle">Receipt email: <strong>{email.trim()}</strong></p>
+            <p className="checkout-subtitle">Card ending in <strong>{card.replace(/\D/g, '').slice(-4) || '4242'}</strong></p>
+          </div>
+          {error && <p className="checkout-error">{error}</p>}
+          <button
+            type="button"
+            className="checkout-submit"
+            disabled={loading || cart.length === 0}
+            onClick={() => void handleConfirmOrder()}
+          >
+            {loading ? 'Processing…' : 'Confirm order'}
+          </button>
+          <button
+            type="button"
+            className="checkout-close-secondary"
+            disabled={loading}
+            onClick={() => setStep('details')}
+          >
+            Back
+          </button>
+        </div>
+        )}
       </div>
     </div>
   )
