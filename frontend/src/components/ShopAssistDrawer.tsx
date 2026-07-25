@@ -3,9 +3,11 @@ import { useSpeechToText } from '../hooks/useSpeechToText'
 import type {
   ChatAction,
   CartProposal,
+  CheckoutReview,
   ChatMessage,
   ChatStatus,
   PageContext,
+  OrderReceipt,
   Product,
   ShoppingNeed,
   ShopAssistRecommendation,
@@ -31,6 +33,8 @@ interface Props {
   comparison: Product[]
   actions: ChatAction[]
   cartProposal: CartProposal | null
+  checkoutReview?: CheckoutReview | null
+  orderReceipt?: OrderReceipt | null
   confirming: boolean
   confirmed: boolean
   onClose: () => void
@@ -41,6 +45,8 @@ interface Props {
   onRemoveNeed: (key: keyof ShoppingNeed, value?: string) => void
   onAction: (action: ChatAction) => void
   onConfirmProposal: (proposalId: string) => void
+  onCancelProposal?: () => void
+  onCancelCheckout?: () => void
   onViewPicks: () => void
 }
 
@@ -50,7 +56,6 @@ const STARTERS = [
   { label: 'Find a phone', text: 'Help me find a phone for my needs.' },
   { label: 'Choose a plan', text: 'Help me choose a mobile plan.' },
   { label: 'Build phone + plan', text: 'Help me build a phone and plan bundle.' },
-  { label: 'Checkout', text: "I'm ready to checkout." },
 ]
 
 const BUDGET_REPLIES = [
@@ -114,6 +119,8 @@ export default function ShopAssistDrawer({
   comparison,
   actions,
   cartProposal,
+  checkoutReview,
+  orderReceipt,
   confirming,
   confirmed,
   onClose,
@@ -124,6 +131,8 @@ export default function ShopAssistDrawer({
   onRemoveNeed,
   onAction,
   onConfirmProposal,
+  onCancelProposal = () => {},
+  onCancelCheckout = () => {},
   onViewPicks,
 }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -210,7 +219,7 @@ export default function ShopAssistDrawer({
         ? 'From next best action'
         : null
   const supplementalActions = actions.filter(
-    (action) => action.type === 'HANDOFF_SERVICE' || action.type === 'OPEN_CHECKOUT',
+    (action) => action.type === 'HANDOFF_SERVICE',
   )
   const latestMessage = messages[messages.length - 1]
   const showRecommendations = recommendations.length > 0 && (
@@ -233,18 +242,16 @@ export default function ShopAssistDrawer({
     <aside
       className={`shopassist-drawer ${open ? 'open' : ''}`}
       aria-hidden={!open}
-      aria-label="ShopAssist purchase guide"
+      aria-label="Ava purchase guide"
     >
       <header className="shopassist-header">
         <div className="shopassist-title-row">
-          <h2>ShopAssist</h2>
-          {mode && (
-            <span className={`assist-mode ${mode}`}>
-              {mode === 'ai' ? 'AI guided' : 'Catalog mode'}
-            </span>
+          <h2>Ava</h2>
+          {mode === 'ai' && (
+            <span className="assist-mode ai">AI guided</span>
           )}
         </div>
-        <button className="assist-close" onClick={onClose} aria-label="Close ShopAssist">
+        <button className="assist-close" onClick={onClose} aria-label="Close Ava">
           ×
         </button>
       </header>
@@ -422,8 +429,13 @@ export default function ShopAssistDrawer({
 
         {cartProposal && (
           <section className="proposal-card" aria-label="Cart proposal">
-            <span className="proposal-eyebrow">Review exact proposal</span>
-            <h3>{proposalProducts.map((product) => product.name).join(' + ')}</h3>
+            <span className="proposal-eyebrow">
+              Review exact {cartProposal.operation === 'remove' ? 'removal' : 'proposal'}
+            </span>
+            <h3>
+              {proposalProducts.length} {proposalProducts.length === 1 ? 'item' : 'items'} to{' '}
+              {cartProposal.operation === 'remove' ? 'remove' : 'add'}
+            </h3>
             {proposalIsComplete ? (
               <>
                 <div className="proposal-items">
@@ -441,6 +453,13 @@ export default function ShopAssistDrawer({
                   {cartProposal.one_time_total > 0 && <span>Due once: ${cartProposal.one_time_total.toFixed(2)}</span>}
                   {cartProposal.monthly_total > 0 && <span>Monthly: ${cartProposal.monthly_total.toFixed(2)}/month</span>}
                 </div>
+                {cartProposal.operation === 'remove' && (
+                  <div className="proposal-totals">
+                    <strong>Cart after removal</strong>
+                    <span>Once: ${(cartProposal.resulting_one_time_total ?? 0).toFixed(2)}</span>
+                    <span>Monthly: ${(cartProposal.resulting_monthly_total ?? 0).toFixed(2)}/month</span>
+                  </div>
+                )}
                 {cartProposal.excluded_product_ids.length > 0 && (
                   <p>
                     {cartProposal.excluded_product_ids.length} item
@@ -448,19 +467,26 @@ export default function ShopAssistDrawer({
                   </p>
                 )}
                 <p>Nothing changes until you allow this step.</p>
-                <button
-                  className="confirm-proposal"
-                  onClick={() => onConfirmProposal(cartProposal.proposal_id)}
-                  disabled={confirming || confirmed}
-                >
-                  {confirming
-                    ? 'Adding…'
-                    : confirmed
-                      ? 'Added to cart'
-                      : proposalProducts.length === 1
-                        ? 'Allow & add item'
-                        : 'Allow & add bundle'}
-                </button>
+                <div className="proposal-confirm-actions">
+                  <button
+                    className="confirm-proposal"
+                    onClick={() => onConfirmProposal(cartProposal.proposal_id)}
+                    disabled={confirming || confirmed}
+                  >
+                    {confirming
+                      ? cartProposal.operation === 'remove' ? 'Removing…' : 'Adding…'
+                      : confirmed
+                        ? cartProposal.operation === 'remove' ? 'Removed' : 'Added to cart'
+                        : cartProposal.operation === 'remove'
+                          ? proposalProducts.length === 1 ? 'Allow & remove item' : 'Allow & remove items'
+                          : proposalProducts.length === 1
+                            ? 'Allow & add item'
+                            : 'Allow & add bundle'}
+                  </button>
+                  <button type="button" onClick={onCancelProposal} disabled={confirming}>
+                    Cancel
+                  </button>
+                </div>
               </>
             ) : (
               <p className="proposal-warning">This proposal is stale or incomplete. Refine your request before confirming.</p>
@@ -468,28 +494,77 @@ export default function ShopAssistDrawer({
           </section>
         )}
 
-        {supplementalActions.length > 0 && (
-          <div className="assist-actions" aria-label="ShopAssist actions">
-            {supplementalActions.map((action) => (
-              action.type === 'OPEN_CHECKOUT' ? (
-                <button
-                  type="button"
-                  className="confirm-proposal"
-                  key={`${action.type}-${action.label}`}
-                  onClick={() => onAction(action)}
-                >
-                  {action.label}
-                </button>
-              ) : (
-                <span className="assist-handoff" key={`${action.type}-${action.label}`}>
-                  {action.label}
+        {checkoutReview && (
+          <section className="proposal-card order-review-card" aria-label="Final demo order review">
+            <span className="proposal-eyebrow">Awaiting order confirmation</span>
+            <h3>Final demo order review</h3>
+            <div className="proposal-items">
+              {checkoutReview.items.map((item) => (
+                <span className="proposal-item-pill" key={item.product_id}>
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>
+                      ${(item.unit_amount_minor / 100).toFixed(2)}
+                      {item.billing_period === 'monthly' ? '/month' : ' once'}
+                    </small>
+                  </span>
                 </span>
-              )
+              ))}
+            </div>
+            <div className="proposal-totals">
+              {checkoutReview.one_time_total_minor > 0 && (
+                <span>Due once: ${(checkoutReview.one_time_total_minor / 100).toFixed(2)}</span>
+              )}
+              {checkoutReview.monthly_total_minor > 0 && (
+                <span>Monthly: ${(checkoutReview.monthly_total_minor / 100).toFixed(2)}/month</span>
+              )}
+            </div>
+            <p>
+              Demo card ending {checkoutReview.payment_last4}. No payment occurs. A transactional
+              email is sent only after you confirm and the demo order is saved.
+            </p>
+            <p>
+              Type <strong>yes</strong>, <strong>confirm</strong>, <strong>place order</strong>,
+              or <strong>go ahead</strong> as the whole message to create this simulated order.
+            </p>
+            <button type="button" onClick={onCancelCheckout}>Cancel checkout</button>
+          </section>
+        )}
+
+        {orderReceipt && (
+          <section className="proposal-card order-receipt-card" aria-label="Demo order receipt">
+            <span className="proposal-eyebrow">Demo order saved</span>
+            <h3>{orderReceipt.order_id}</h3>
+            <p role="status">
+              No real payment was processed.{' '}
+              {orderReceipt.email_status === 'sent'
+                ? 'Transactional confirmation email sent.'
+                : orderReceipt.email_status === 'failed'
+                  ? 'The order is saved; transactional email delivery failed and is queued for retry.'
+                  : 'The order is saved; transactional email delivery is pending.'}
+            </p>
+            <div className="proposal-totals">
+              {orderReceipt.one_time_total_minor > 0 && (
+                <span>Once: ${(orderReceipt.one_time_total_minor / 100).toFixed(2)}</span>
+              )}
+              {orderReceipt.monthly_total_minor > 0 && (
+                <span>Monthly: ${(orderReceipt.monthly_total_minor / 100).toFixed(2)}/month</span>
+              )}
+            </div>
+          </section>
+        )}
+
+        {supplementalActions.length > 0 && (
+          <div className="assist-actions" aria-label="Ava actions">
+            {supplementalActions.map((action) => (
+              <span className="assist-handoff" key={`${action.type}-${action.label}`}>
+                {action.label}
+              </span>
             ))}
           </div>
         )}
 
-        {loading && <div className="assist-loading" role="status">ShopAssist is checking the catalog…</div>}
+        {loading && <div className="assist-loading" role="status">Ava is checking the catalog…</div>}
         {error && (
           <div className="assist-error" role="alert">
             <span>{error}</span>
@@ -539,7 +614,7 @@ export default function ShopAssistDrawer({
             className="assist-send"
             onClick={() => onSend()}
             disabled={loading || listening || !draft.trim()}
-            aria-label="Send to ShopAssist"
+            aria-label="Send to Ava"
           >
             Send
           </button>

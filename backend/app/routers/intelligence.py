@@ -1,11 +1,9 @@
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.models.schemas import (
     AbandonmentResponse,
     BundleAddRequest,
-    CheckoutRequest,
-    CheckoutResponse,
     IntelligenceProfileResponse,
     NextBestActionResponse,
     RecommendationsResponse,
@@ -13,11 +11,10 @@ from app.models.schemas import (
     SessionStateResponse,
     SmartCartResponse,
 )
-from app.services.checkout_service import complete_checkout
-from app.services.receipt_email_service import get_receipt_html
 from app.services.next_best_action_service import get_next_best_actions
 from app.services.omnichannel_service import get_omnichannel_context
 from app.services.orchestrator_service import get_intelligence_profile
+from app.services.personalized_recommendation import resolve_profile_session
 from app.services.product_catalog import catalog
 from app.services.recommendation_engine import get_recommendations
 from app.services.session_helpers import session_response
@@ -38,12 +35,17 @@ def _touch_channel(session_id: str | None, channel: str | None) -> str:
 async def intelligence_profile(
     session_id: str | None = None,
     customer_id: str | None = None,
+    user_id: str | None = None,
     channel: str = Query(default="oneshop"),
     limit: int = Query(default=6, le=12),
 ) -> IntelligenceProfileResponse:
     """Unified AI orchestrator — intent, recs, NBA, smart cart in one call."""
-    sid = session_store.resolve_session(session_id, customer_id)
-    profile = get_intelligence_profile(sid, limit=limit)
+    sid = (
+        resolve_profile_session(user_id, session_id, channel)
+        if user_id
+        else session_store.resolve_session(session_id, customer_id)
+    )
+    profile = await run_in_threadpool(get_intelligence_profile, sid, limit=limit)
     abandon_data = profile.pop("abandonment", {})
     omni = get_omnichannel_context(sid, channel)
     profile.update({
@@ -106,30 +108,6 @@ async def add_bundle_to_cart(request: BundleAddRequest) -> SessionStateResponse:
     sid = _touch_channel(request.session_id, request.channel)
     session_store.add_bundle_to_cart(sid, request.product_ids)
     return session_response(sid)
-
-
-@router.post("/api/checkout/complete", response_model=CheckoutResponse)
-async def checkout_complete(request: CheckoutRequest) -> CheckoutResponse:
-    sid = session_store.get_or_create(request.session_id)
-    try:
-        return complete_checkout(
-            sid,
-            customer_name=request.customer_name,
-            email=request.email,
-            payment_last4=request.payment_last4,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-
-@router.get("/api/checkout/receipt/{order_id}", response_class=HTMLResponse)
-async def view_receipt(order_id: str, session_id: str = Query(..., min_length=1)) -> HTMLResponse:
-    """Session-scoped HTML receipt viewer — Eva delivery, no public PII exposure."""
-    sid = session_store.get_or_create(session_id)
-    html = get_receipt_html(order_id, sid)
-    if not html:
-        raise HTTPException(status_code=404, detail="Receipt not found for this session")
-    return HTMLResponse(content=html)
 
 
 @router.post("/api/checkout/abandon", response_model=AbandonmentResponse)

@@ -74,7 +74,7 @@ Golden status:
 |---|---|---|
 | G01-G09 | Pass | Deterministic IDs, budgets, reasons, and honest no-match assertions |
 | G10 | Pass | Two validated phones and exact `$100` price difference |
-| G11-G12 | Pass | Unsupported and Frag Magenta service routing |
+| G11-G12 | Pass | Unsupported and generic customer-support routing |
 | G13 | Pass | Proposal rendered; chat cart delta remained zero |
 | G14 | Pass | Exactly one confirmation request; cart became the two proposed items |
 | G15 | Pass | Live close/reopen persistence and focus return |

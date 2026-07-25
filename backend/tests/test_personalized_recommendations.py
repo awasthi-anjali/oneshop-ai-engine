@@ -5,16 +5,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models.schemas import RecommendationInteractionRequest
-from app.services.checkout_profile_store import reset_checkout_profile_overrides
 from app.services.interaction_store import InteractionStore
 from app.services.product_catalog import catalog
-
-
-@pytest.fixture(autouse=True)
-def _isolated_checkout_profiles():
-    reset_checkout_profile_overrides()
-    yield
-    reset_checkout_profile_overrides()
 
 
 def _client() -> TestClient:
@@ -32,18 +24,15 @@ def _event(user_id: str, event_type: str, product_id: str | None = None, **extra
     }
 
 
-def test_checkout_profile_api_and_chat_update():
+def test_checkout_profile_api_and_raw_card_chat_are_not_supported():
     client = _client()
-    profile = client.get("/api/recommendations/user_001/checkout-profile").json()
-    assert profile["full_name"] == "Anjali"
-    assert profile["email"] == "anjali00223@gmail.com"
-
-    updated = client.patch(
+    assert client.get(
+        "/api/recommendations/user_001/checkout-profile"
+    ).status_code == 404
+    assert client.patch(
         "/api/recommendations/user_001/checkout-profile",
         json={"email": "alex.new@studentmail.demo"},
-    ).json()
-    assert updated["email"] == "alex.new@studentmail.demo"
-    assert updated["full_name"] == "Anjali"
+    ).status_code == 404
 
     chat = client.post(
         "/api/chat",
@@ -52,8 +41,11 @@ def test_checkout_profile_api_and_chat_update():
             "channel": "oneshop",
             "user_id": "user_001",
         },
-    ).json()
-    assert chat["checkout_profile"]["card_number"].endswith("9999")
+    )
+    assert chat.status_code == 200
+    payload = chat.json()
+    assert "checkout_profile" not in payload
+    assert "424242429999" not in str(payload)
 
 
 def test_demo_profiles_are_actual_catalog_personas_with_divergent_rankings():
@@ -62,9 +54,9 @@ def test_demo_profiles_are_actual_catalog_personas_with_divergent_rankings():
     assert [profile["user_id"] for profile in profiles] == [
         "user_001", "user_011", "user_021", "user_031", "user_041"
     ]
-    assert profiles[0]["full_name"] == "Anjali"
-    assert profiles[0]["email"] == "anjali00223@gmail.com"
-    assert profiles[0]["card_number"].endswith("4242")
+    assert all("full_name" not in profile for profile in profiles)
+    assert all("email" not in profile for profile in profiles)
+    assert all("card_number" not in profile for profile in profiles)
 
     rankings = {}
     for profile in profiles:
@@ -189,6 +181,45 @@ def test_same_profile_continues_across_channels_without_cross_user_leakage():
     ).json()
     assert isolated["session_id"] != web["session_id"]
     assert isolated["profile"]["total_interactions"] == 0
+
+
+def test_intelligence_profile_uses_the_same_isolated_cart_as_shopassist():
+    client = _client()
+    first_user = f"intelligence_a_{uuid.uuid4().hex}"
+    second_user = f"intelligence_b_{uuid.uuid4().hex}"
+
+    first = client.get(
+        "/api/intelligence/profile",
+        params={"user_id": first_user, "channel": "oneshop"},
+    ).json()
+    client.post(
+        "/api/customer/cart/add",
+        json={
+            "session_id": first["session_id"],
+            "product_id": "google-pixel-8",
+            "channel": "oneshop",
+        },
+    )
+    first_again = client.get(
+        "/api/intelligence/profile",
+        params={
+            "session_id": first["session_id"],
+            "user_id": first_user,
+            "channel": "oneshop",
+        },
+    ).json()
+    isolated = client.get(
+        "/api/intelligence/profile",
+        params={
+            "session_id": first["session_id"],
+            "user_id": second_user,
+            "channel": "oneshop",
+        },
+    ).json()
+
+    assert [item["id"] for item in first_again["cart"]] == ["google-pixel-8"]
+    assert isolated["session_id"] != first_again["session_id"]
+    assert isolated["cart"] == []
 
 
 def test_session_cart_and_wishlist_are_authoritative_exclusions():

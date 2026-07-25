@@ -38,8 +38,12 @@ def test_validator_removes_cross_sell_already_in_cart():
     assert len(result["cross_sell_suggestions"]) == 1
     assert result["cross_sell_suggestions"][0].product.id == case.id
     assert result["cross_sell_suggestions"][0].rate == 0
-    assert result["cross_sell_suggestions"][0].reason == "Compatible catalog add-on"
-    assert result["nudge"] == "Review your cart and compatible add-ons before checkout."
+    assert result["cross_sell_suggestions"][0].reason == (
+        "Protective case option; verify model fit before purchase"
+    )
+    assert result["nudge"] == (
+        "Review trusted totals and optional catalog suggestions before demo checkout."
+    )
     assert result["checkout_tip"] == ""
 
 
@@ -136,7 +140,9 @@ def test_validator_rejects_unknown_product_facts_and_llm_commerce_copy():
     })
     assert result["cross_sell_suggestions"] == []
     assert result["bundles"] == []
-    assert result["nudge"] == "Review your cart and compatible add-ons before checkout."
+    assert result["nudge"] == (
+        "Review trusted totals and optional catalog suggestions before demo checkout."
+    )
     assert result["checkout_tip"] == ""
     assert result["discount"] == 0
     assert result["total"] == phone.price
@@ -159,6 +165,73 @@ def test_smart_cart_and_checkout_keep_billing_cadences_separate():
     cart = session_store.get_cart(sid)
     assert calculate_totals(cart) == (784, 0.0, 0.0, 784)
     assert calculate_cadence_totals(cart) == (699, 85)
+
+
+def test_pixel_suggestions_exclude_brand_mismatched_audio_and_duplicates():
+    sid = f"pixel-smart-cart-{uuid.uuid4().hex}"
+    session_store.add_to_cart(sid, "google-pixel-8")
+
+    smart = get_smart_cart(sid)
+    cross_sell_ids = {
+        item.product.id for item in smart["cross_sell_suggestions"]
+    }
+    bundle_ids = {
+        product_id
+        for bundle in smart["bundles"]
+        for product_id in bundle.product_ids
+    }
+
+    assert "airpods-pro" not in cross_sell_ids
+    assert "galaxy-buds2-pro" not in cross_sell_ids
+    assert cross_sell_ids.isdisjoint(bundle_ids)
+    assert bundle_ids == {"phone-case-universal", "unlimited-essential"}
+
+
+def test_phone_audio_suggestions_are_same_brand_only():
+    samsung_sid = f"samsung-smart-cart-{uuid.uuid4().hex}"
+    session_store.add_bundle_to_cart(
+        samsung_sid,
+        ["samsung-a54", "phone-case-universal"],
+    )
+    samsung_ids = {
+        item.product.id
+        for item in get_smart_cart(samsung_sid)["cross_sell_suggestions"]
+    }
+
+    apple_sid = f"apple-smart-cart-{uuid.uuid4().hex}"
+    session_store.add_bundle_to_cart(
+        apple_sid,
+        ["iphone-15-pro", "phone-case-universal"],
+    )
+    apple_ids = {
+        item.product.id
+        for item in get_smart_cart(apple_sid)["cross_sell_suggestions"]
+    }
+
+    assert "galaxy-buds2-pro" in samsung_ids
+    assert "airpods-pro" not in samsung_ids
+    assert "airpods-pro" in apple_ids
+    assert "galaxy-buds2-pro" not in apple_ids
+
+
+def test_phone_with_plan_never_suggests_another_plan():
+    sid = f"phone-plan-smart-cart-{uuid.uuid4().hex}"
+    session_store.add_bundle_to_cart(
+        sid,
+        ["google-pixel-8", "unlimited-plus"],
+    )
+
+    smart = get_smart_cart(sid)
+
+    assert all(
+        item.product.category != ProductCategory.PLAN
+        for item in smart["cross_sell_suggestions"]
+    )
+    assert all(
+        product.category != ProductCategory.PLAN
+        for bundle in smart["bundles"]
+        for product in bundle.products
+    )
 
 
 def test_abandonment_never_creates_an_untrusted_offer():

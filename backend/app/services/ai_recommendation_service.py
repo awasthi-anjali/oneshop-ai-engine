@@ -45,6 +45,7 @@ def enhance_with_ai(
     try:
         response = client.chat.completions.create(
             model=settings.openai_model,
+            reasoning_effort=settings.openai_reasoning_effort,
             messages=[
                 {"role": "system", "content": RECOMMEND_PROMPT},
                 {

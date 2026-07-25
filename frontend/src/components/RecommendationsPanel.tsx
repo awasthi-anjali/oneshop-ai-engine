@@ -1,12 +1,8 @@
 import type {
-  BundleSuggestion,
-  CrossSellItem,
   CustomerIntent,
   PersonalizedProfile,
   PersonalizedRecommendation,
-  Product,
 } from '../api'
-import SmartCartPanel from './SmartCartPanel'
 import './RecommendationsPanel.css'
 
 interface Props {
@@ -23,23 +19,6 @@ interface Props {
   recommendationPipeline?: string
   retrievalMethod?: string
   retrievalQuery?: string
-  smartCart: {
-    bundles: BundleSuggestion[]
-    crossSell: CrossSellItem[]
-    nudge: string
-    checkoutTip: string
-    aiPowered: boolean
-    subtotal: number
-    discount: number
-    total: number
-    oneTimeTotal: number
-    monthlyTotal: number
-    cartItems: Product[]
-  }
-  onCheckout: () => void
-  onAddBundle: (productIds: string[]) => void
-  onAddCrossSell: (productId: string) => void
-  onRemoveFromCart: (productId: string) => void
 }
 
 export default function RecommendationsPanel({
@@ -56,18 +35,14 @@ export default function RecommendationsPanel({
   recommendationPipeline,
   retrievalMethod,
   retrievalQuery,
-  smartCart,
-  onCheckout,
-  onAddBundle,
-  onAddCrossSell,
-  onRemoveFromCart,
 }: Props) {
   const strongestRecommendation = recommendations[0]
 
   return (
     <aside className="rec-panel">
       <div className="rec-panel-header">
-        <h2>Why these picks?</h2>
+        <span className="rec-section-kicker">Explainable AI</span>
+        <h2>Why this recommendation?</h2>
         <div className="rec-header-badges">
           {aiPowered && <span className="rec-ai-badge">AI Powered</span>}
           <span className={`rec-live-badge ${streamStatus}`}>
@@ -117,21 +92,6 @@ export default function RecommendationsPanel({
         </div>
       )}
 
-      {intent && (
-        <div className="rec-intent">
-          <span className="rec-intent-label">Why this recommendation ?</span>
-          <p>{intent.summary}</p>
-          {intent.ecosystem && <p className="rec-ecosystem">🏷 {intent.ecosystem}</p>}
-          {intent.tags.length > 0 && (
-            <div className="rec-tags">
-              {intent.tags.map((tag) => (
-                <span key={tag} className="rec-tag">{tag}</span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       <section className="ranking-evidence" aria-label="Recommendation evidence">
         {loading && recommendations.length === 0 ? (
           <p className="rec-empty">Preparing profile evidence…</p>
@@ -163,21 +123,21 @@ export default function RecommendationsPanel({
         )}
       </section>
 
-      <SmartCartPanel
-        bundles={smartCart.bundles}
-        crossSell={smartCart.crossSell}
-        nudge={smartCart.nudge}
-        checkoutTip={smartCart.checkoutTip}
-        aiPowered={smartCart.aiPowered}
-        cartCount={cartCount}
-        cartItems={smartCart.cartItems}
-        oneTimeTotal={smartCart.oneTimeTotal}
-        monthlyTotal={smartCart.monthlyTotal}
-        onCheckout={onCheckout}
-        onAddBundle={onAddBundle}
-        onAddCrossSell={onAddCrossSell}
-        onRemoveFromCart={onRemoveFromCart}
-      />
+      {intent && (
+        <details className="rec-intent">
+          <summary className="rec-intent-label">Signals used for this ranking</summary>
+          <p>{intent.summary}</p>
+          {intent.ecosystem && <p className="rec-ecosystem">{intent.ecosystem}</p>}
+          {intent.tags.length > 0 && (
+            <div className="rec-tags">
+              {intent.tags.map((tag) => (
+                <span key={tag} className="rec-tag">{tag}</span>
+              ))}
+            </div>
+          )}
+        </details>
+      )}
+
     </aside>
   )
 }

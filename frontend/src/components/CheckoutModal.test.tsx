@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Product } from '../api'
 import CheckoutModal from './CheckoutModal'
 
@@ -30,26 +30,72 @@ const plan: Product = {
   billing_period: 'monthly',
 }
 
-describe('CheckoutModal trusted totals', () => {
-  it('does not combine one-time and monthly charges into a fake payable total', () => {
+describe('CheckoutModal trusted demo review', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('keeps cadence totals separate and clearly labels simulated payment', () => {
     render(
       <CheckoutModal
         open
         cart={[phone, plan]}
         sessionId="checkout-test"
         userId="user_001"
-        oneTimeTotal={699}
-        monthlyTotal={85}
         onClose={vi.fn()}
-        onSuccess={vi.fn()}
+        onReview={vi.fn()}
       />,
     )
 
     expect(screen.getByText('$699.00')).toBeInTheDocument()
     expect(screen.getByText('$85.00/month')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Confirm order' })).not.toBeInTheDocument()
+    expect(screen.getByText('No promotional discount is assumed.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create final review' })).toBeInTheDocument()
+    expect(screen.getByText(/raw number stays in this form/i)).toBeInTheDocument()
     expect(screen.queryByText('$784.00')).not.toBeInTheDocument()
-    expect(screen.queryByText(/bundle savings|recovery discount/i)).not.toBeInTheDocument()
+  })
+
+  it('maps the approved card to a demo token and never sends the raw number', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        review_id: 'rev_1234567890123456',
+        session_id: 'checkout-test',
+        status: 'awaiting_confirmation',
+        items: [],
+        one_time_total_minor: 69900,
+        monthly_total_minor: 8500,
+        customer_name: 'Demo User',
+        email: 'demo@example.com',
+        payment_mode: 'demo_simulated',
+        payment_status: 'simulated',
+        payment_last4: '4242',
+        confirmation_token: 'token_1234567890123456',
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <CheckoutModal
+        open
+        cart={[phone, plan]}
+        sessionId="checkout-test"
+        userId="user_001"
+        onClose={vi.fn()}
+        onReview={vi.fn()}
+      />,
+    )
+    fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'Demo User' } })
+    fireEvent.change(screen.getByLabelText('Email for this demo receipt'), {
+      target: { value: 'demo@example.com' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /use 4242/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create final review' }))
+
+    await screen.findByText('Review your demo order')
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(payload.demo_payment_method).toBe('demo_card_success')
+    expect(JSON.stringify(payload)).not.toContain('4242424242424242')
+    expect(payload).not.toHaveProperty('payment_last4')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
   })
 })

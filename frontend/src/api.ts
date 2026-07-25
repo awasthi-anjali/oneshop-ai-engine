@@ -51,9 +51,10 @@ export type ChatActionType =
   | 'COMPARE'
   | 'OPEN_PRODUCT'
   | 'VIEW_CART'
-  | 'OPEN_CHECKOUT'
   | 'PROPOSE_ADD_TO_CART'
   | 'PROPOSE_ADD_BUNDLE'
+  | 'PROPOSE_REMOVE_FROM_CART'
+  | 'OPEN_CHECKOUT'
   | 'HANDOFF_SERVICE'
 
 export interface ChatAction {
@@ -72,17 +73,25 @@ export interface CartSummary {
 
 export interface CartProposal {
   proposal_id: string
+  operation?: 'add' | 'remove'
+  cart_version?: number
   products: Product[]
   product_ids: string[]
   excluded_product_ids: string[]
   one_time_total: number
   monthly_total: number
+  resulting_one_time_total?: number
+  resulting_monthly_total?: number
+  expires_at?: string | null
 }
 
 export interface CartConfirmationResponse {
   session_id: string
   proposal_id: string
+  cart_version: number
+  operation?: 'add' | 'remove'
   added_product_ids: string[]
+  removed_product_ids?: string[]
   excluded_product_ids: string[]
   idempotent_replay: boolean
   cart_summary: CartSummary
@@ -112,12 +121,13 @@ export interface ChatResponse {
   actions: ChatAction[]
   mode: 'ai' | 'fallback'
   suggested_actions: string[]
-  cart_updated: boolean
+  cart_updated: false
   open_checkout: boolean
   selected_tool?: string | null
   cart_summary?: CartSummary | null
   cart_proposal?: CartProposal | null
-  checkout_profile?: CheckoutProfile | null
+  checkout_review_status?: string | null
+  order_receipt?: OrderReceipt | null
 }
 
 interface LegacyChatResponse {
@@ -155,7 +165,8 @@ interface WireV1ChatResponse {
   selected_tool?: string | null
   cart_summary?: CartSummary | null
   cart_proposal?: CartProposal | null
-  checkout_profile?: CheckoutProfile | null
+  checkout_review_status?: string | null
+  order_receipt?: OrderReceipt | null
 }
 
 export interface CustomerIntent {
@@ -296,20 +307,50 @@ export interface SmartCartResponse {
   monthly_total: number
 }
 
-export interface CheckoutResponse {
+export interface CheckoutReviewItem {
+  product_id: string
+  name: string
+  category: string
+  currency: string
+  billing_period: 'one_time' | 'monthly'
+  unit_amount_minor: number
+}
+
+export interface CheckoutReview {
+  review_id: string
   session_id: string
+  cart_version?: number
+  status: string
+  items: CheckoutReviewItem[]
+  one_time_total_minor: number
+  monthly_total_minor: number
+  customer_name: string
+  email: string
+  payment_mode: 'demo_simulated'
+  payment_status: 'simulated'
+  payment_last4: string
+  confirmation_token?: string | null
+  expires_at: string
+  consumed_order_id?: string | null
+}
+
+export interface OrderReceipt {
   order_id: string
-  items: Product[]
-  subtotal: number
-  savings: number
-  discount: number
-  total: number
-  one_time_total: number
-  monthly_total: number
-  message: string
-  receipt_from?: string
-  receipt_sent?: boolean
-  receipt_url?: string
+  session_id: string
+  status: 'demo_order_confirmed'
+  payment_mode: 'demo_simulated'
+  payment_status: 'simulated'
+  payment_last4: string
+  customer_name: string
+  email: string
+  items: CheckoutReviewItem[]
+  one_time_total_minor: number
+  monthly_total_minor: number
+  created_at: string
+  idempotent_replay: boolean
+  email_status: 'pending' | 'sending' | 'sent' | 'failed'
+  email_attempts: number
+  email_provider: string | null
 }
 
 export interface AbandonmentStatus {
@@ -372,6 +413,7 @@ export interface OmnichannelContext {
 
 export interface SessionState {
   session_id: string
+  cart_version?: number
   wishlist: Product[]
   cart: Product[]
   viewed: Product[]
@@ -381,6 +423,21 @@ export interface SessionState {
 }
 
 const API_BASE = '/api'
+
+function apiErrorMessage(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback
+  const detail = (payload as { detail?: unknown }).detail
+  if (typeof detail === 'string') return detail
+  if (
+    detail
+    && typeof detail === 'object'
+    && typeof (detail as { message?: unknown }).message === 'string'
+  ) {
+    return (detail as { message: string }).message
+  }
+  return fallback
+}
+
 const SESSION_KEY = 'oneshop_session_id'
 const CHANNEL_KEY = 'oneshop_channel'
 const SYNC_TICK_KEY = 'oneshop_sync_tick'
@@ -391,18 +448,12 @@ const PERSONALIZATION_EVENT = 'oneshop-personalization-user'
 export type Channel = 'oneshop' | 'oneapp'
 
 export const DEMO_USERS = [
-  { id: 'user_001', name: 'Anjali', full_name: 'Anjali', description: 'Budget student', emoji: '🎓', email: 'anjali00223@gmail.com', card_number: '4242424242424242' },
-  { id: 'user_011', name: 'Dev', full_name: 'Dev Patel', description: 'Tech enthusiast', emoji: '🚀', email: 'dev.patel@techmail.demo', card_number: '5555555555554444' },
-  { id: 'user_021', name: 'Morgan', full_name: 'Morgan Brooks', description: 'Business pro', emoji: '💼', email: 'morgan.brooks@workmail.demo', card_number: '378282246310005' },
-  { id: 'user_031', name: 'Greta', full_name: 'Greta Lindstrom', description: 'Senior', emoji: '🌿', email: 'greta.lindstrom@seniormail.demo', card_number: '6011111111111117' },
-  { id: 'user_041', name: 'Chris', full_name: 'Chris Nguyen', description: 'Family parent', emoji: '👨‍👩‍👧', email: 'chris.nguyen@familymail.demo', card_number: '4000000000009995' },
+  { id: 'user_001', name: 'Alex', description: 'Budget student', emoji: '🎓' },
+  { id: 'user_011', name: 'Dev', description: 'Tech enthusiast', emoji: '🚀' },
+  { id: 'user_021', name: 'Morgan', description: 'Business pro', emoji: '💼' },
+  { id: 'user_031', name: 'Greta', description: 'Senior', emoji: '🌿' },
+  { id: 'user_041', name: 'Chris', description: 'Family parent', emoji: '👨‍👩‍👧' },
 ] as const
-
-export interface CheckoutProfile {
-  full_name: string
-  email: string
-  card_number: string
-}
 
 export function getPersonalizationUserId(): string {
   const stored = localStorage.getItem(PERSONALIZATION_USER_KEY)
@@ -635,11 +686,13 @@ export async function removeFromCart(
 
 export async function getIntelligenceProfile(
   sessionId: string | null,
-  channel: Channel = getChannel()
+  channel: Channel = getChannel(),
+  userId: string = getPersonalizationUserId(),
 ): Promise<IntelligenceProfile> {
   const params = new URLSearchParams()
   if (sessionId) params.set('session_id', sessionId)
   params.set('channel', channel)
+  params.set('user_id', userId)
   const res = await fetch(`${API_BASE}/intelligence/profile?${params}`)
   if (!res.ok) throw new Error('Failed to load intelligence profile')
   const data: IntelligenceProfile = await res.json()
@@ -714,11 +767,7 @@ export async function confirmShopAssistCartProposal(
   })
   if (!res.ok) {
     const detail = await res.json().catch(() => null)
-    throw new Error(
-      typeof detail?.detail === 'string'
-        ? detail.detail
-        : 'The cart proposal could not be confirmed.'
-    )
+    throw new Error(apiErrorMessage(detail, 'The cart proposal could not be confirmed.'))
   }
   const data: CartConfirmationResponse = await res.json()
   storeSessionId(data.session_id)
@@ -726,29 +775,76 @@ export async function confirmShopAssistCartProposal(
   return data
 }
 
-export async function completeCheckout(
-  sessionId: string | null,
+export async function createCheckoutReview(
+  sessionId: string,
+  userId: string,
   customerName: string,
   email: string,
-  paymentLast4: string
-): Promise<CheckoutResponse> {
-  const res = await fetch(`${API_BASE}/checkout/complete`, {
+  demoPaymentMethod: 'demo_card_success' | 'demo_card_declined',
+): Promise<CheckoutReview> {
+  const res = await fetch(`${API_BASE}/checkout/reviews`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       session_id: sessionId,
+      user_id: userId,
       customer_name: customerName,
       email,
-      payment_last4: paymentLast4,
+      demo_payment_method: demoPaymentMethod,
     }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || 'Checkout failed')
+    throw new Error(apiErrorMessage(err, 'Could not create the demo order review'))
   }
-  const data: CheckoutResponse = await res.json()
+  const data: CheckoutReview = await res.json()
   storeSessionId(data.session_id)
   return data
+}
+
+export async function cancelCheckoutReview(
+  reviewId: string,
+  sessionId: string,
+  userId: string,
+): Promise<void> {
+  const params = new URLSearchParams({ session_id: sessionId, user_id: userId })
+  const res = await fetch(`${API_BASE}/checkout/reviews/${encodeURIComponent(reviewId)}?${params}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok && res.status !== 204) throw new Error('Could not cancel checkout review')
+}
+
+export async function getCheckoutReview(
+  reviewId: string,
+  sessionId: string,
+  userId: string,
+): Promise<CheckoutReview> {
+  const params = new URLSearchParams({ session_id: sessionId, user_id: userId })
+  const res = await fetch(`${API_BASE}/checkout/reviews/${encodeURIComponent(reviewId)}?${params}`)
+  if (!res.ok) throw new Error('Checkout review was not found')
+  return res.json()
+}
+
+export async function getOrderByIdempotency(
+  key: string,
+  sessionId: string,
+  userId: string,
+): Promise<OrderReceipt> {
+  const params = new URLSearchParams({ session_id: sessionId, user_id: userId })
+  const res = await fetch(`${API_BASE}/orders/by-idempotency/${encodeURIComponent(key)}?${params}`)
+  if (!res.ok) throw new Error('Order was not found')
+  return res.json()
+}
+
+export async function getOrder(
+  orderId: string,
+  sessionId: string,
+  userId: string,
+): Promise<OrderReceipt> {
+  const params = new URLSearchParams({ session_id: sessionId, user_id: userId })
+  const res = await fetch(`${API_BASE}/orders/${encodeURIComponent(orderId)}?${params}`)
+  if (!res.ok) throw new Error('Order was not found')
+  return res.json()
 }
 
 export async function getAbandonmentStatus(
@@ -783,7 +879,12 @@ export async function sendMessage(
     preferred_categories: string[]
     price_centroid: number | null
     interaction_count: number
-  }
+  },
+  checkoutConfirmation?: {
+    review_id: string
+    confirmation_token: string
+    idempotency_key: string
+  },
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
@@ -795,15 +896,12 @@ export async function sendMessage(
       user_id: userId,
       personalization_context: personalizationContext,
       page_context: pageContext,
+      checkout_confirmation: checkoutConfirmation,
     }),
   })
   if (!res.ok) {
     const detail = await res.json().catch(() => null)
-    throw new Error(
-      typeof detail?.detail === 'string'
-        ? detail.detail
-        : 'ShopAssist could not respond. Please try again.'
-    )
+    throw new Error(apiErrorMessage(detail, 'Ava could not respond. Please try again.'))
   }
   const raw = (await res.json()) as WireV1ChatResponse | LegacyChatResponse
   if ('status' in raw) {
@@ -820,12 +918,13 @@ export async function sendMessage(
       actions: raw.actions,
       mode: raw.mode,
       suggested_actions: raw.suggested_actions ?? [],
-      cart_updated: raw.cart_updated ?? false,
-      open_checkout: raw.open_checkout ?? false,
+      cart_updated: false,
+      open_checkout: raw.open_checkout,
       selected_tool: raw.selected_tool,
       cart_summary: raw.cart_summary,
       cart_proposal: raw.cart_proposal,
-      checkout_profile: raw.checkout_profile ?? null,
+      checkout_review_status: raw.checkout_review_status,
+      order_receipt: raw.order_receipt,
     }
     storeSessionId(data.session_id)
     return data

@@ -1,11 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { CheckoutResponse, Product } from '../api'
-import { completeCheckout } from '../api'
-import {
-  fetchCheckoutProfile,
-  formatCardNumber,
-  saveCheckoutProfile,
-} from '../checkoutProfile'
+import type { CheckoutReview, Product } from '../api'
+import { createCheckoutReview } from '../api'
 import './CheckoutModal.css'
 
 interface Props {
@@ -13,10 +8,15 @@ interface Props {
   cart: Product[]
   sessionId: string | null
   userId: string
-  oneTimeTotal: number
-  monthlyTotal: number
   onClose: () => void
-  onSuccess: (order: CheckoutResponse) => void
+  onReview: (review: CheckoutReview) => void
+}
+
+const SUCCESS_CARD = '4242424242424242'
+const DECLINED_CARD = '4000000000000002'
+
+function formatCard(value: string) {
+  return value.replace(/\D/g, '').slice(0, 16).replace(/(\d{4})(?=\d)/g, '$1 ')
 }
 
 export default function CheckoutModal({
@@ -24,124 +24,120 @@ export default function CheckoutModal({
   cart,
   sessionId,
   userId,
-  oneTimeTotal,
-  monthlyTotal,
   onClose,
-  onSuccess,
+  onReview,
 }: Props) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [card, setCard] = useState('')
   const [loading, setLoading] = useState(false)
-  const [profileLoading, setProfileLoading] = useState(false)
   const [error, setError] = useState('')
-  const [order, setOrder] = useState<CheckoutResponse | null>(null)
-  const [step, setStep] = useState<'details' | 'confirm'>('details')
+  const [review, setReview] = useState<CheckoutReview | null>(null)
+  const oneTimeTotal = cart
+    .filter((product) => product.billing_period !== 'monthly' && product.category !== 'plan')
+    .reduce((total, product) => total + product.price, 0)
+  const monthlyTotal = cart
+    .filter((product) => product.billing_period === 'monthly' || product.category === 'plan')
+    .reduce((total, product) => total + product.price, 0)
 
   useEffect(() => {
-    if (!open) return
-    setStep('details')
-    setOrder(null)
-    setError('')
-    let cancelled = false
-    setProfileLoading(true)
-    fetchCheckoutProfile(userId)
-      .then((profile) => {
-        if (cancelled) return
-        setName(profile.full_name)
-        setEmail(profile.email)
-        setCard(formatCardNumber(profile.card_number))
-      })
-      .finally(() => {
-        if (!cancelled) setProfileLoading(false)
-      })
-    return () => {
-      cancelled = true
+    if (!open) {
+      setCard('')
+      setReview(null)
+      setError('')
     }
-  }, [open, userId])
-
-  const persistProfile = async (patch: {
-    full_name?: string
-    email?: string
-    card_number?: string
-  }) => {
-    await saveCheckoutProfile(userId, patch)
-  }
+  }, [open])
 
   if (!open) return null
 
-  const handleContinue = (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     setError('')
-    if (!name.trim() || !email.trim()) {
-      setError('Enter your name and email to continue.')
+    if (!sessionId) {
+      setError('Your session is not ready. Close checkout and try again.')
       return
     }
-    setStep('confirm')
-  }
-
-  const handleConfirmOrder = async () => {
-    setError('')
+    const digits = card.replace(/\D/g, '')
+    if (digits !== SUCCESS_CARD && digits !== DECLINED_CARD) {
+      setError('Use one of the approved demo card numbers shown below.')
+      return
+    }
     setLoading(true)
     try {
-      const cardDigits = card.replace(/\D/g, '')
-      await persistProfile({
-        full_name: name.trim(),
-        email: email.trim(),
-        card_number: cardDigits,
-      })
-      const last4 = cardDigits.slice(-4) || '4242'
-      const result = await completeCheckout(sessionId, name.trim(), email.trim(), last4)
-      setOrder(result)
-      onSuccess(result)
+      const result = await createCheckoutReview(
+        sessionId,
+        userId,
+        name.trim(),
+        email.trim(),
+        digits === SUCCESS_CARD ? 'demo_card_success' : 'demo_card_declined',
+      )
+      setCard('')
+      setReview(result)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Checkout failed')
+      setCard('')
+      setError(err instanceof Error ? err.message : 'Demo checkout failed')
     } finally {
       setLoading(false)
     }
   }
 
-  if (order) {
+  if (review) {
     return (
       <div className="checkout-overlay" onClick={onClose}>
-        <div className="checkout-modal success" onClick={(e) => e.stopPropagation()}>
-          <div className="checkout-success-icon">✓</div>
-          <h2>Order Confirmed!</h2>
-          <p className="order-id">Order {order.order_id}</p>
-          <p>{order.message}</p>
-          {order.receipt_sent ? (
-            <p className="checkout-subtitle">Check your Gmail inbox for the HTML receipt from Eva.</p>
-          ) : (
-            <p className="checkout-subtitle">
-              Inbox delivery is not configured on the server yet. Use the receipt link below.
-            </p>
-          )}
-          {order.receipt_url && (
-            <p className="checkout-subtitle">
-              <a
-                href={order.receipt_url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View HTML receipt from {order.receipt_from || 'Eva'}
-              </a>
-            </p>
-          )}
+        <div
+          className="checkout-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="checkout-review-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button className="checkout-close" onClick={onClose} aria-label="Close checkout">×</button>
+          <span className="checkout-step">Final trusted review</span>
+          <h2 id="checkout-review-title">Review your demo order</h2>
+          <p className="checkout-subtitle">
+            Nothing is ordered until you continue to Ava and explicitly confirm.
+          </p>
+          <div className="checkout-items">
+            {review.items.map((item) => (
+              <div key={item.product_id} className="checkout-item">
+                <div>
+                  <span className="item-name">{item.name}</span>
+                  <span className="item-price">
+                    ${(item.unit_amount_minor / 100).toFixed(2)}
+                    {item.billing_period === 'monthly' ? '/month' : ' once'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
           <div className="checkout-summary">
-            {order.one_time_total > 0 && (
+            {review.one_time_total_minor > 0 && (
               <div className="summary-row total">
-                <span>Paid once</span>
-                <span>${order.one_time_total.toFixed(2)}</span>
+                <span>Due once</span>
+                <span>${(review.one_time_total_minor / 100).toFixed(2)}</span>
               </div>
             )}
-            {order.monthly_total > 0 && (
+            {review.monthly_total_minor > 0 && (
               <div className="summary-row total">
                 <span>Monthly service</span>
-                <span>${order.monthly_total.toFixed(2)}/month</span>
+                <span>${(review.monthly_total_minor / 100).toFixed(2)}/month</span>
               </div>
             )}
           </div>
-          <button className="checkout-submit" onClick={onClose}>Continue Shopping</button>
+          <p className="demo-payment-notice">
+            Demo card ending {review.payment_last4}. No payment or charge occurs.
+            Taxes, fees, shipping, eligibility, and activation are not calculated.
+          </p>
+          <button
+            type="button"
+            className="checkout-submit"
+            onClick={() => onReview(review)}
+          >
+            Continue in Ava to confirm
+          </button>
+          <button type="button" className="checkout-secondary" onClick={onClose}>
+            Edit cart
+          </button>
         </div>
       </div>
     )
@@ -149,19 +145,28 @@ export default function CheckoutModal({
 
   return (
     <div className="checkout-overlay" onClick={onClose}>
-      <div className="checkout-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="checkout-close" onClick={onClose}>×</button>
-        <h2>Checkout</h2>
-        <p className="checkout-subtitle">{cart.length} item(s) in your cart</p>
+      <div
+        className="checkout-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="checkout-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button className="checkout-close" onClick={onClose} aria-label="Close checkout">×</button>
+        <span className="checkout-step">Checkout details</span>
+        <h2 id="checkout-title">Prepare a demo order</h2>
+        <p className="checkout-subtitle">
+          {cart.length} {cart.length === 1 ? 'item' : 'items'} in your cart
+        </p>
 
         <div className="checkout-items">
-          {cart.map((p) => (
-            <div key={p.id} className="checkout-item">
-              <img src={p.image_url} alt={p.name} />
+          {cart.map((product) => (
+            <div key={product.id} className="checkout-item">
+              <img src={product.image_url} alt="" />
               <div>
-                <span className="item-name">{p.name}</span>
+                <span className="item-name">{product.name}</span>
                 <span className="item-price">
-                  {p.category === 'plan' ? `$${p.price}/mo` : `$${p.price}`}
+                  {product.category === 'plan' ? `$${product.price}/month` : `$${product.price} once`}
                 </span>
               </div>
             </div>
@@ -181,71 +186,53 @@ export default function CheckoutModal({
               <span>${monthlyTotal.toFixed(2)}/month</span>
             </div>
           )}
-          <p className="checkout-subtitle">Receipts are sent by Eva (eva@gmail.com) after you confirm the order.</p>
+          <p className="checkout-subtitle">No promotional discount is assumed.</p>
         </div>
 
-        {step === 'details' ? (
-        <form className="checkout-form" onSubmit={handleContinue}>
+        <form className="checkout-form" onSubmit={handleSubmit}>
           <label>
             Full name
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              disabled={profileLoading}
-            />
+            <input value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} />
           </label>
           <label>
-            Email
+            Email for this demo receipt
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(event) => setEmail(event.target.value)}
               required
-              disabled={profileLoading}
+              maxLength={254}
             />
           </label>
           <label>
-            Card number (demo)
+            Demo card number
             <input
+              inputMode="numeric"
+              autoComplete="off"
               value={card}
-              onChange={(e) => setCard(formatCardNumber(e.target.value))}
+              onChange={(event) => setCard(formatCard(event.target.value))}
               placeholder="4242 4242 4242 4242"
-              maxLength={23}
-              disabled={profileLoading}
+              maxLength={19}
+              required
             />
           </label>
-          {error && <p className="checkout-error">{error}</p>}
-          <button type="submit" className="checkout-submit" disabled={profileLoading || cart.length === 0}>
-            Continue
+          <div className="demo-card-options" aria-label="Approved demo card numbers">
+            <button type="button" onClick={() => setCard(formatCard(SUCCESS_CARD))}>
+              Use 4242 4242 4242 4242 — success
+            </button>
+            <button type="button" onClick={() => setCard(formatCard(DECLINED_CARD))}>
+              Use 4000 0000 0000 0002 — decline
+            </button>
+          </div>
+          <p className="demo-payment-notice">
+            Demo card only — no real payment is processed. Do not enter real card information.
+            The raw number stays in this form and is never sent to OneShop.
+          </p>
+          {error && <p className="checkout-error" role="alert">{error}</p>}
+          <button type="submit" className="checkout-submit" disabled={loading || cart.length === 0}>
+            {loading ? 'Validating demo details…' : 'Create final review'}
           </button>
         </form>
-        ) : (
-        <div className="checkout-form">
-          <div className="checkout-summary">
-            <p className="checkout-subtitle"><strong>{name.trim()}</strong></p>
-            <p className="checkout-subtitle">Receipt email: <strong>{email.trim()}</strong></p>
-            <p className="checkout-subtitle">Card ending in <strong>{card.replace(/\D/g, '').slice(-4) || '4242'}</strong></p>
-          </div>
-          {error && <p className="checkout-error">{error}</p>}
-          <button
-            type="button"
-            className="checkout-submit"
-            disabled={loading || cart.length === 0}
-            onClick={() => void handleConfirmOrder()}
-          >
-            {loading ? 'Processing…' : 'Confirm order'}
-          </button>
-          <button
-            type="button"
-            className="checkout-close-secondary"
-            disabled={loading}
-            onClick={() => setStep('details')}
-          >
-            Back
-          </button>
-        </div>
-        )}
       </div>
     </div>
   )

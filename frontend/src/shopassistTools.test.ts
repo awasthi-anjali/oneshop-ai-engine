@@ -66,6 +66,24 @@ describe('ShopAssist cart tool API', () => {
     expect(response.cart_updated).toBe(false)
   })
 
+  it('preserves the backend checkout transition instead of forcing it off', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...baseResponse,
+        selected_tool: 'start_checkout',
+        open_checkout: true,
+        actions: [],
+        cart_proposal: null,
+      }),
+    }))
+
+    const response = await sendMessage('place the order', 'session-1')
+
+    expect(response.selected_tool).toBe('start_checkout')
+    expect(response.open_checkout).toBe(true)
+  })
+
   it('confirms by opaque proposal and stable idempotency key without sending product facts', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -109,7 +127,12 @@ describe('ShopAssist cart tool API', () => {
   it('surfaces a backend confirmation failure without claiming a cart update', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
-      json: async () => ({ detail: 'Cart proposal pricing changed. Nothing was added.' }),
+      json: async () => ({
+        detail: {
+          code: 'price_changed',
+          message: 'Cart proposal pricing changed. Nothing was added.',
+        },
+      }),
     }))
 
     await expect(confirmShopAssistCartProposal(
@@ -118,5 +141,67 @@ describe('ShopAssist cart tool API', () => {
       'session-1',
       'user_001',
     )).rejects.toThrow('pricing changed')
+  })
+
+  it('sends only the active review token and stable key for deterministic order confirmation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...baseResponse,
+        cart_proposal: null,
+        actions: [],
+        checkout_review_status: 'consumed',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await sendMessage(
+      'yes',
+      'session-1',
+      undefined,
+      'oneshop',
+      'user_001',
+      undefined,
+      {
+        review_id: 'rev_1234567890',
+        confirmation_token: 'opaque-confirmation-token',
+        idempotency_key: 'stable-order-key',
+      },
+    )
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+
+    expect(body.checkout_confirmation).toEqual({
+      review_id: 'rev_1234567890',
+      confirmation_token: 'opaque-confirmation-token',
+      idempotency_key: 'stable-order-key',
+    })
+    expect(body).not.toHaveProperty('product_ids')
+    expect(body).not.toHaveProperty('total')
+    expect(body).not.toHaveProperty('card_number')
+  })
+
+  it.each(['who r u', 'who are you'])('keeps identity turn %s conversational and action-free', async (message) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...baseResponse,
+        message: "I'm Ava, OneShop's shopping assistant.",
+        recommendations: [],
+        actions: [],
+        selected_tool: null,
+        cart_proposal: null,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await sendMessage(message, 'identity-session', undefined, 'oneshop', 'user_001')
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+
+    expect(requestBody.message).toBe(message)
+    expect(response.status).toBe('recommended')
+    expect(response.message).toContain("I'm Ava")
+    expect(response.recommendations).toEqual([])
+    expect(response.actions).toEqual([])
+    expect(response.status).not.toBe('no_match')
   })
 })

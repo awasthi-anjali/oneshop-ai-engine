@@ -90,7 +90,7 @@ export default function ProductDetailModal({
                   className="modal-assist"
                   onClick={(event) => onAskShopAssist(product, event.currentTarget)}
                 >
-                  Ask ShopAssist
+                  Ask Ava
                 </button>
               )}
               <button

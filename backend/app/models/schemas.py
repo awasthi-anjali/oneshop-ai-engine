@@ -86,6 +86,19 @@ class PersonalizationContext(BaseModel):
         return [value for value in normalized if value]
 
 
+class CheckoutConfirmationContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_id: str = Field(..., min_length=16, max_length=128)
+    confirmation_token: str = Field(..., min_length=16, max_length=256)
+    idempotency_key: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_.:-]+$",
+    )
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -95,6 +108,7 @@ class ChatRequest(BaseModel):
     user_id: str | None = Field(default=None, min_length=2, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     personalization_context: PersonalizationContext | None = None
     page_context: PageContext | None = None
+    checkout_confirmation: CheckoutConfirmationContext | None = None
 
     @field_validator("message")
     @classmethod
@@ -163,9 +177,10 @@ class ShopAssistActionType(str, Enum):
     COMPARE = "COMPARE"
     OPEN_PRODUCT = "OPEN_PRODUCT"
     VIEW_CART = "VIEW_CART"
-    OPEN_CHECKOUT = "OPEN_CHECKOUT"
     PROPOSE_ADD_TO_CART = "PROPOSE_ADD_TO_CART"
     PROPOSE_ADD_BUNDLE = "PROPOSE_ADD_BUNDLE"
+    PROPOSE_REMOVE_FROM_CART = "PROPOSE_REMOVE_FROM_CART"
+    OPEN_CHECKOUT = "OPEN_CHECKOUT"
     HANDOFF_SERVICE = "HANDOFF_SERVICE"
 
 
@@ -185,25 +200,16 @@ class CartSummary(BaseModel):
 
 class CartProposal(BaseModel):
     proposal_id: str
-    products: list[Product] = Field(..., min_length=1, max_length=3)
-    product_ids: list[str] = Field(..., min_length=1, max_length=3)
+    operation: str = Field(default="add", pattern=r"^(add|remove)$")
+    cart_version: int = Field(default=0, ge=0)
+    products: list[Product] = Field(..., min_length=1, max_length=20)
+    product_ids: list[str] = Field(..., min_length=1, max_length=20)
     excluded_product_ids: list[str] = Field(default_factory=list)
     one_time_total: float = 0
     monthly_total: float = 0
-
-
-class CheckoutProfile(BaseModel):
-    full_name: str = Field(..., min_length=2, max_length=120)
-    email: str = Field(..., min_length=3, max_length=120)
-    card_number: str = Field(..., min_length=4, max_length=19)
-
-
-class CheckoutProfileUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    full_name: str | None = Field(default=None, min_length=2, max_length=120)
-    email: str | None = Field(default=None, min_length=3, max_length=120)
-    card_number: str | None = Field(default=None, min_length=4, max_length=19)
+    resulting_one_time_total: float = 0
+    resulting_monthly_total: float = 0
+    expires_at: str | None = None
 
 
 class ChatStatus(str, Enum):
@@ -235,7 +241,8 @@ class ChatResponse(BaseModel):
     selected_tool: str | None = None
     cart_summary: CartSummary | None = None
     cart_proposal: CartProposal | None = None
-    checkout_profile: CheckoutProfile | None = None
+    checkout_review_status: str | None = None
+    order_receipt: "OrderReceipt | None" = None
 
 
 class CartConfirmationRequest(BaseModel):
@@ -251,10 +258,108 @@ class CartConfirmationRequest(BaseModel):
 class CartConfirmationResponse(BaseModel):
     session_id: str
     proposal_id: str
+    cart_version: int = Field(ge=0)
+    operation: str = Field(default="add", pattern=r"^(add|remove)$")
     added_product_ids: list[str] = Field(default_factory=list)
+    removed_product_ids: list[str] = Field(default_factory=list)
     excluded_product_ids: list[str] = Field(default_factory=list)
     idempotent_replay: bool = False
     cart_summary: CartSummary
+
+
+class DemoPaymentMethod(str, Enum):
+    SUCCESS = "demo_card_success"
+    DECLINED = "demo_card_declined"
+
+
+class CheckoutReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(..., min_length=1, max_length=128)
+    user_id: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+    customer_name: str = Field(..., min_length=2, max_length=80)
+    email: str = Field(..., min_length=3, max_length=254)
+    demo_payment_method: DemoPaymentMethod
+
+    @field_validator("customer_name")
+    @classmethod
+    def normalize_customer_name(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if any(char in normalized for char in "\r\n"):
+            raise ValueError("customer_name contains invalid characters")
+        return normalized
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if (
+            any(char in normalized for char in "\r\n,;")
+            or normalized.count("@") != 1
+            or "." not in normalized.rsplit("@", 1)[1]
+        ):
+            raise ValueError("Enter a valid email address")
+        return normalized
+
+
+class CheckoutReviewItem(BaseModel):
+    product_id: str
+    name: str
+    category: str
+    currency: str
+    billing_period: str
+    unit_amount_minor: int
+
+
+class CheckoutReviewResponse(BaseModel):
+    review_id: str
+    session_id: str
+    cart_version: int = Field(ge=0)
+    status: str
+    items: list[CheckoutReviewItem]
+    one_time_total_minor: int
+    monthly_total_minor: int
+    customer_name: str
+    email: str
+    payment_mode: str = "demo_simulated"
+    payment_status: str = "simulated"
+    payment_last4: str
+    confirmation_token: str | None = None
+    expires_at: str
+    consumed_order_id: str | None = None
+
+
+class OrderItemSnapshot(BaseModel):
+    product_id: str
+    name: str
+    category: str
+    currency: str
+    billing_period: str
+    unit_amount_minor: int
+
+
+class OrderReceipt(BaseModel):
+    order_id: str
+    session_id: str
+    status: str = "demo_order_confirmed"
+    payment_mode: str = "demo_simulated"
+    payment_status: str = "simulated"
+    payment_last4: str
+    customer_name: str
+    email: str
+    items: list[OrderItemSnapshot]
+    one_time_total_minor: int
+    monthly_total_minor: int
+    created_at: str
+    idempotent_replay: bool = False
+    email_status: str = "pending"
+    email_attempts: int = 0
+    email_provider: str | None = None
 
 
 class ProductSearchRequest(BaseModel):
@@ -355,29 +460,6 @@ class BundleAddRequest(BaseModel):
     channel: str | None = None
 
 
-class CheckoutRequest(BaseModel):
-    session_id: str | None = None
-    customer_name: str = Field(..., min_length=2)
-    email: str = Field(..., min_length=3)
-    payment_last4: str = Field(default="4242", min_length=4, max_length=4)
-
-
-class CheckoutResponse(BaseModel):
-    session_id: str
-    order_id: str
-    items: list[Product] = Field(default_factory=list)
-    subtotal: float
-    savings: float
-    discount: float = 0
-    total: float
-    one_time_total: float = 0
-    monthly_total: float = 0
-    message: str
-    receipt_from: str = ""
-    receipt_sent: bool = False
-    receipt_url: str = ""
-
-
 class AbandonmentResponse(BaseModel):
     session_id: str
     is_abandoned: bool
@@ -453,6 +535,7 @@ class OmnichannelContextResponse(BaseModel):
 
 class SessionStateResponse(BaseModel):
     session_id: str
+    cart_version: int = Field(ge=0)
     wishlist: list[Product] = Field(default_factory=list)
     cart: list[Product] = Field(default_factory=list)
     viewed: list[Product] = Field(default_factory=list)
@@ -509,3 +592,6 @@ class RecommendationInteractionRequest(BaseModel):
     channel: ChatChannel = ChatChannel.ONESHOP
     session_id: str | None = Field(default=None, max_length=128)
     metadata: RecommendationEventMetadata = Field(default_factory=RecommendationEventMetadata)
+
+
+ChatResponse.model_rebuild()
