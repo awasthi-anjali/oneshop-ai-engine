@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # Real inbox delivery (optional — pick one):
     eva_gmail_app_password: str = ""
     resend_api_key: str = ""
-    resend_from: str = "Eva at OneShop <onboarding@resend.dev>"
+    resend_from: str = "Ava at OneShop <onboarding@resend.dev>"
 
     @field_validator("openai_api_key", mode="before")
     @classmethod

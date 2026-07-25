@@ -22,8 +22,10 @@ from app.models.schemas import Product, ProductCategory
 
 logger = logging.getLogger(__name__)
 
-EVA_NAME = "Eva"
-EVA_EMAIL = "eva@gmail.com"
+EVA_NAME = "Ava"
+# Keep the display name aligned with ShopAssist.  The mailbox is configured
+# independently from secrets; this value is only the sender address.
+EVA_EMAIL = "ava@gmail.com"
 EVA_FROM = f"{EVA_NAME} <{EVA_EMAIL}>"
 
 RECEIPTS_DIR = Path(__file__).resolve().parent.parent / "data" / "receipts"
@@ -203,10 +205,10 @@ def _send_via_eva_gmail(to_email: str, subject: str, html: str) -> bool:
             server.starttls()
             server.login(EVA_EMAIL, settings.eva_gmail_app_password)
             server.sendmail(EVA_EMAIL, [to_email], message.as_string())
-        logger.info("Eva Gmail delivered receipt to %s", mask_email(to_email))
+        logger.info("Ava Gmail delivered receipt to %s", mask_email(to_email))
         return True
     except Exception as exc:
-        logger.warning("Eva Gmail delivery failed for %s: %s", mask_email(to_email), type(exc).__name__)
+        logger.warning("Ava Gmail delivery failed for %s: %s", mask_email(to_email), type(exc).__name__)
         return False
 
 
@@ -282,7 +284,7 @@ def deliver_receipt_via_eva(
     inbox_delivered, delivery_method, delivery_error = _send_to_inbox(email, order_id, html)
     masked = mask_email(email)
     logger.info(
-        "Eva receipt for order %s -> %s (method=%s, inbox=%s)",
+        "Ava receipt for order %s -> %s (method=%s, inbox=%s)",
         order_id,
         masked,
         delivery_method,

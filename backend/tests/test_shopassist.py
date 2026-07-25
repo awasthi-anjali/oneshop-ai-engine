@@ -295,6 +295,33 @@ def test_conversational_turns_do_not_get_an_unsupported_error(client, message, s
     assert data["recommendations"] == []
 
 
+def test_capabilities_identity_and_explanation_do_not_replay_stale_phone_search(client):
+    first = post(client, "suggest something under 200").json()
+    assert first["status"] == "no_match"
+    sid = first["session_id"]
+
+    capabilities = post(client, "what can you offer?", sid).json()
+    assert capabilities["recommendations"] == []
+    assert "Ava" in capabilities["message"]
+    assert "promotion" not in capabilities["message"].lower()
+
+    plan = post(client, "what about a plan?", sid).json()
+    assert plan["status"] == "recommended"
+    assert plan["recommendations"]
+    assert all(item["product"]["category"] == "plan" for item in plan["recommendations"])
+    assert "/month" in plan["message"]
+
+    explanation = post(client, "then why did you say couldn't find phone?", sid).json()
+    assert explanation["recommendations"] == []
+    assert "no in-stock phone at or below $200" in explanation["message"]
+    assert "recurring monthly price" in explanation["message"]
+
+    for message in ("who are you", "what's your name?"):
+        identity = post(client, message, sid).json()
+        assert identity["recommendations"] == []
+        assert "Ava" in identity["message"]
+
+
 @pytest.mark.parametrize(
     "transcript",
     [

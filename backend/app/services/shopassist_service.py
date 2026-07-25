@@ -88,6 +88,11 @@ class _State:
     turns: list[dict[str, str]] = field(default_factory=list)
     clarification_asked: bool = False
     recommendations: list[ShopAssistRecommendation] = field(default_factory=list)
+    # This is deliberately small and server-derived.  It supports truthful
+    # follow-up explanations without treating an old shopping need as the
+    # intent for a new conversational turn.
+    last_outcome: dict[str, Any] = field(default_factory=dict)
+    last_no_match: dict[str, Any] = field(default_factory=dict)
     total_user_turns: int = 0
 
 
@@ -256,7 +261,10 @@ class ShopAssistService:
             and not is_prompt_injection_or_off_topic(lowered)
         ):
             deterministic_intent = "shopping"
-        if deterministic_intent == "ambiguous" and state.need.categories:
+        # A retained need is context, not an instruction.  Only an explicit
+        # shopping reference may continue it; identity, capabilities and
+        # explanation turns must never re-run the last catalog search.
+        if deterministic_intent == "ambiguous" and self._is_shopping_continuation(lowered):
             deterministic_intent = "shopping"
 
         if ai_result is None and deterministic_intent == "ambiguous":
@@ -302,7 +310,14 @@ class ShopAssistService:
                 patch = self._merge_patch(patch, ai_patch)
                 mode = ChatMode.AI
 
-        state.need = self._merge_need(state.need, patch)
+        # "What about a plan?" is an explicit category switch, not a request
+        # to rerun a phone constraint alongside a plan.  A prior bare budget
+        # is useful context, so carry it over as a monthly ceiling only here.
+        if patch.get("categories") == ["plan"] and set(state.need.categories) == {"phone"}:
+            plan_budget = patch.get("monthly_budget_max", state.need.device_budget_max)
+            state.need = NeedProfile(categories=["plan"], monthly_budget_max=plan_budget)
+        else:
+            state.need = self._merge_need(state.need, patch)
         state.turns.append({"role": "user", "content": text})
         state.turns = state.turns[-12:]
 
@@ -402,6 +417,7 @@ class ShopAssistService:
 
         if set(session_store.get_cart_ids(sid)) != before_cart:
             raise RuntimeError("ShopAssist chat attempted to mutate cart")
+        self._record_outcome(state, response)
         return response
 
     def _intent(self, text: str) -> str:
@@ -419,6 +435,22 @@ class ShopAssistService:
         ):
             return "shopping"
         return "ambiguous"
+
+    @staticmethod
+    def _is_shopping_continuation(text: str) -> bool:
+        return bool(re.search(r"\b(?:another|other|cheaper|more expensive|that one|this one|those|it|them|refine|instead)\b", text))
+
+    def _record_outcome(self, state: _State, response: ChatResponse) -> None:
+        """Keep only validated result metadata needed for later explanations."""
+        state.last_outcome = {
+            "status": response.status.value,
+            "categories": list(response.need_profile.categories),
+            "device_budget_max": response.need_profile.device_budget_max,
+            "monthly_budget_max": response.need_profile.monthly_budget_max,
+            "recommendation_ids": [item.product.id for item in response.recommendations],
+        }
+        if response.status == ChatStatus.NO_MATCH:
+            state.last_no_match = dict(state.last_outcome)
 
     def _is_checkout_profile_update(self, lowered: str, text: str) -> bool:
         if any(
@@ -656,6 +688,26 @@ class ShopAssistService:
                 [ShopAssistAction(type=ShopAssistActionType.REFINE, label="Describe what you need")],
                 ChatMode.FALLBACK,
             )
+        if self._is_capabilities_question(normalized):
+            state.turns.append({"role": "user", "content": text})
+            return self._response(
+                sid, state, ChatStatus.RECOMMENDED,
+                "I'm Ava, OneShop's ShopAssist shopping assistant. I can search the trusted phone and plan catalog, explain trade-offs, compare options, prepare an exact cart proposal for your approval, and help you review your cart or checkout.",
+                [], [], ChatMode.FALLBACK,
+            )
+        if self._is_identity_question(normalized):
+            state.turns.append({"role": "user", "content": text})
+            return self._response(
+                sid, state, ChatStatus.RECOMMENDED,
+                "My name is Ava. I'm OneShop's ShopAssist shopping assistant, and I can help you find and compare trusted catalog options, then prepare a cart proposal for you to confirm.",
+                [], [], ChatMode.FALLBACK,
+            )
+        if self._is_explanation_question(normalized):
+            state.turns.append({"role": "user", "content": text})
+            return self._response(
+                sid, state, ChatStatus.RECOMMENDED,
+                self._outcome_explanation(state.last_no_match or state.last_outcome), [], [], ChatMode.FALLBACK,
+            )
         if normalized in {
             "thanks", "thank you", "thank you so much", "great thanks",
             "got it thanks", "perfect thanks",
@@ -671,6 +723,29 @@ class ShopAssistService:
                 ChatMode.FALLBACK,
             )
         return None
+
+    @staticmethod
+    def _is_identity_question(text: str) -> bool:
+        return bool(re.search(r"\b(?:who are you|what(?:s| is) your name|your name)\b", text))
+
+    @staticmethod
+    def _is_capabilities_question(text: str) -> bool:
+        return bool(re.search(r"\b(?:what can you (?:do|help with|offer)|how can you help|what do you offer)\b", text))
+
+    @staticmethod
+    def _is_explanation_question(text: str) -> bool:
+        return bool(re.search(r"\b(?:why did you say|why .*no phone|explain (?:that|the result))\b", text))
+
+    @staticmethod
+    def _outcome_explanation(outcome: dict[str, Any]) -> str:
+        if outcome.get("status") == ChatStatus.NO_MATCH.value and outcome.get("categories") == ["phone"]:
+            budget = outcome.get("device_budget_max")
+            suffix = f" at or below ${budget:.0f}" if budget is not None else ""
+            return (
+                f"I said there was no phone because the trusted catalog had no in-stock phone{suffix}. "
+                "I did not relax that constraint. A plan is a separate category with a recurring monthly price, not a phone's one-time price."
+            )
+        return "I can explain the last catalog result when there is one. Ask me about a phone, plan, budget, cart, or checkout."
 
     @staticmethod
     def _is_greeting_only(normalized: str) -> bool:
@@ -1640,13 +1715,12 @@ class ShopAssistService:
         )
 
     def _is_discount_query(self, text: str) -> bool:
-        return any(
-            word in text
-            for word in (
-                "discount", "deal", "coupon", "sale", "cashback", "cash back",
-                "promotion", "promo", "offer", "rebate",
-            )
-        )
+        # "offer" is ordinary conversational language ("what can you
+        # offer?"); require an actual commercial promotion cue.
+        return any(word in text for word in (
+            "discount", "deal", "coupon", "sale", "cashback", "cash back",
+            "promotion", "promo", "rebate",
+        )) or bool(re.search(r"\b(?:special|promotional) offers?\b", text))
 
     def _discount_message(
         self,
@@ -1675,7 +1749,7 @@ class ShopAssistService:
             return (
                 f"I couldn't find an in-stock {platform}phone at or below "
                 f"${need.device_budget_max:.0f} in the current catalog. "
-                "I haven't relaxed your budget."
+                "I haven't relaxed your budget. You can ask for the cheapest trusted phone, or for plans under that monthly budget."
             )
         if categories == {"plan"} and need.monthly_budget_max is not None:
             return (
