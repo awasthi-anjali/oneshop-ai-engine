@@ -17,7 +17,7 @@ export default function AbandonmentBanner({ message, onCheckout, onDismiss }: Pr
         </div>
       </div>
       <div className="abandon-actions">
-        <button className="abandon-checkout" onClick={onCheckout}>Complete Checkout</button>
+        <button className="abandon-checkout" onClick={onCheckout}>Start demo checkout</button>
         <button className="abandon-dismiss" onClick={onDismiss}>Dismiss</button>
       </div>
     </div>

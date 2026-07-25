@@ -6,6 +6,7 @@ from app.models.schemas import (
     ChatRequest,
     ChatResponse,
 )
+from app.services.commerce_store import commerce_error_detail
 from app.services.shopassist_service import shopassist
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -16,7 +17,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     try:
         return await shopassist.chat(request)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=commerce_error_detail(exc)) from exc
 
 
 @router.post("/cart/confirm", response_model=CartConfirmationResponse)
@@ -24,7 +25,7 @@ async def confirm_cart(request: CartConfirmationRequest) -> CartConfirmationResp
     try:
         return await shopassist.confirm_cart(request)
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=commerce_error_detail(exc)) from exc
 
 
 @router.get("/health")

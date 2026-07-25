@@ -6,45 +6,15 @@ from app.services.smart_cart_guardrails import validate_smart_cart_output
 from app.services.product_catalog import catalog
 from app.services.session_store import session_store
 
-CO_PURCHASE_MAP: dict[str, list[dict[str, Any]]] = {
-    "phone:Apple": [
-        {"tag": "audio", "brand": "Apple"},
-        {"tag": "case", "brand": None},
-        {"tag": "charger", "brand": "Apple"},
-    ],
-    "phone:Samsung": [
-        {"tag": "audio", "brand": "Samsung"},
-        {"tag": "case", "brand": None},
-    ],
-    "phone:Google": [
-        {"tag": "audio", "brand": None},
-        {"tag": "case", "brand": None},
-    ],
-    "phone:*": [
-        {"tag": "case", "brand": None},
-        {"tag": "audio", "brand": None},
-    ],
-    "tablet:*": [
-        {"tag": "case", "brand": None},
-    ],
+PHONE_ACCESSORY_IDS: dict[str, list[str]] = {
+    "Apple": ["airpods-pro"],
+    "Samsung": ["galaxy-buds2-pro"],
+    "Google": ["phone-case-universal"],
+    "OnePlus": ["phone-case-universal"],
 }
-
-BUNDLE_RULES: list[dict[str, Any]] = [
-    {
-        "name": "Phone Essentials Bundle",
-        "trigger_categories": [ProductCategory.PHONE],
-        "suggest_tags": ["case"],
-        "discount_percent": 0,
-        "description": "A protective add-on selected from the current catalog.",
-    },
-    {
-        "name": "Device + Plan Bundle",
-        "trigger_categories": [ProductCategory.PHONE, ProductCategory.TABLET],
-        "suggest_categories": [ProductCategory.PLAN],
-        "discount_percent": 0,
-        "description": "A plan option selected from the current catalog.",
-    },
-]
+DEFAULT_PHONE_ACCESSORY_IDS = ["phone-case-universal"]
+DEFAULT_PHONE_PLAN_ID = "unlimited-essential"
+TABLET_PLAN_ID = "data-only-plan"
 
 
 def _cart_tags(cart: list[Product]) -> set[str]:
@@ -145,26 +115,36 @@ def get_cross_sell_suggestions(
     if not trigger_product:
         return []
 
-    profile = profile or {}
-    preferred = set(_preferred_brands(profile))
-    category = trigger_product.category.value
-    brand = trigger_product.brand
-    key_specific = f"{category}:{brand}"
-    key_generic = f"{category}:*"
-    rules = CO_PURCHASE_MAP.get(key_specific, CO_PURCHASE_MAP.get(key_generic, []))
-    if not rules:
+    cart_ids = {p.id for p in cart}
+    cart_categories = {p.category for p in cart}
+    candidate_ids: list[str] = []
+    if trigger_product.category == ProductCategory.PHONE:
+        candidate_ids.extend(
+            PHONE_ACCESSORY_IDS.get(
+                trigger_product.brand,
+                DEFAULT_PHONE_ACCESSORY_IDS,
+            )
+        )
+        if ProductCategory.PLAN not in cart_categories:
+            candidate_ids.append(DEFAULT_PHONE_PLAN_ID)
+    elif trigger_product.category == ProductCategory.TABLET:
+        if ProductCategory.PLAN not in cart_categories:
+            candidate_ids.append(TABLET_PLAN_ID)
+    else:
         return []
 
-    cart_ids = {p.id for p in cart}
     suggestions: list[CrossSellItem] = []
 
-    for rule in rules:
-        product = _find_product_by_tag(rule["tag"], rule.get("brand"), cart_ids, profile)
-        if not product:
+    for product_id in candidate_ids:
+        product = catalog.get_by_id(product_id)
+        if not product or not product.in_stock or product.id in cart_ids:
             continue
-        reason = "Compatible catalog add-on"
-        if product.brand in preferred:
-            reason += " · matches your recorded brand preference"
+        if product.category == ProductCategory.PLAN:
+            reason = "General phone service option; eligibility is not assumed"
+        elif "audio" in product.tags:
+            reason = f"Same-brand wireless audio option for {trigger_product.brand}"
+        else:
+            reason = "Protective case option; verify model fit before purchase"
         suggestions.append(CrossSellItem(
             product=product,
             rate=0,
@@ -181,51 +161,43 @@ def detect_bundles(
     if not cart:
         return []
 
-    profile = profile or {}
     cart_ids = {p.id for p in cart}
     cart_categories = {p.category for p in cart}
-    cart_tags = _cart_tags(cart)
-    bundles: list[BundleSuggestion] = []
-    for rule in BUNDLE_RULES:
-        triggers = rule["trigger_categories"]
-        if not any(category in cart_categories for category in triggers):
-            continue
+    phone = next(
+        (product for product in cart if product.category == ProductCategory.PHONE),
+        None,
+    )
+    if not phone:
+        return []
 
-        suggested_products: list[Product] = []
+    suggested_products: list[Product] = []
+    case = catalog.get_by_id("phone-case-universal")
+    if case and case.in_stock and case.id not in cart_ids:
+        suggested_products.append(case)
+    if ProductCategory.PLAN not in cart_categories:
+        plan = catalog.get_by_id(DEFAULT_PHONE_PLAN_ID)
+        if plan and plan.in_stock and plan.id not in cart_ids:
+            suggested_products.append(plan)
 
-        for tag in rule.get("suggest_tags", []):
-            if tag in cart_tags:
-                continue
-            product = _find_product_by_tag(tag, None, cart_ids, profile)
-            if product:
-                suggested_products.append(product)
+    if len(suggested_products) < 2:
+        return []
 
-        for category in rule.get("suggest_categories", []):
-            if category in cart_categories:
-                continue
-            product = _find_product_by_category(category, cart_ids, profile)
-            if product:
-                suggested_products.append(product)
-        if not suggested_products:
-            continue
-
-        original_total = sum(p.price for p in suggested_products)
-        discount_percent = 0.0
-        savings = 0.0
-        bundle_price = round(original_total, 2)
-
-        bundles.append(BundleSuggestion(
-            name=rule["name"],
+    original_total = round(sum(product.price for product in suggested_products), 2)
+    return [
+        BundleSuggestion(
+            name="Complete your phone setup",
             products=suggested_products,
-            product_ids=[p.id for p in suggested_products],
-            total_price=bundle_price,
-            original_price=round(original_total, 2),
-            discount_percent=discount_percent,
-            savings=savings,
-            reason=rule["description"],
-        ))
-
-    return bundles[:1]
+            product_ids=[product.id for product in suggested_products],
+            total_price=original_total,
+            original_price=original_total,
+            discount_percent=0,
+            savings=0,
+            reason=(
+                "A protective case option and a general phone plan from the "
+                "current catalog. Verify case fit and plan eligibility."
+            ),
+        )
+    ]
 
 
 def _resolve_trigger_product(cart: list[Product], session_id: str) -> Product | None:
@@ -268,13 +240,13 @@ def format_smart_cart_chat_hints(smart: dict[str, Any]) -> dict[str, Any]:
     parts: list[str] = []
     if cross_sell:
         parts.append(
-            "Frequently bought together: "
+            "Optional catalog suggestions: "
             + "; ".join(f"{item['name']} ({item['reason']})" for item in cross_sell)
         )
     if bundles:
         bundle = bundles[0]
         parts.append(
-            f"Compatible add-on group: {bundle['name']} — {bundle['reason']} "
+            f"Suggested item set: {bundle['name']} — {bundle['reason']} "
             f"({', '.join(bundle['products'])})"
         )
     return {
@@ -302,6 +274,14 @@ def get_smart_cart(session_id: str, user_id: str | None = None) -> dict[str, Any
     bundles = detect_bundles(cart, profile)
     trigger = _resolve_trigger_product(cart, session_id)
     cross_sell = get_cross_sell_suggestions(cart, trigger, profile)
+    grouped_ids = {
+        product_id
+        for bundle in bundles
+        for product_id in bundle.product_ids
+    }
+    cross_sell = [
+        item for item in cross_sell if item.product.id not in grouped_ids
+    ]
     subtotal, discount, total = _calculate_cart_totals(cart)
     one_time_total = round(
         sum(product.price for product in cart if product.category != ProductCategory.PLAN),
@@ -311,7 +291,7 @@ def get_smart_cart(session_id: str, user_id: str | None = None) -> dict[str, Any
         sum(product.price for product in cart if product.category == ProductCategory.PLAN),
         2,
     )
-    nudge = "Review your cart and compatible add-ons before checkout."
+    nudge = "Review trusted totals and optional catalog suggestions before demo checkout."
     checkout_tip = ""
     ai_powered = False
 

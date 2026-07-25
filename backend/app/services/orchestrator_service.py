@@ -17,7 +17,10 @@ from app.services.ai_client import get_openai_client, is_ai_enabled
 from app.services.catalog_retrieval import catalog_compact, semantic_retrieve_with_meta
 from app.services.customer_context import build_customer_context, get_funnel_stage
 from app.services.intent_engine import extract_intent_from_signals
-from app.services.next_best_action_service import get_next_best_actions
+from app.services.next_best_action_service import (
+    get_next_best_actions,
+    sanitize_next_best_actions,
+)
 from app.services.product_catalog import catalog
 from app.services.recommendation_validator import validate_recommendations
 from app.services.session_store import session_store
@@ -43,7 +46,7 @@ Given customer context and the product catalog, return ONE JSON object with all 
     {"product_id": "must-be-from-catalog", "reason": "1 sentence why this fits"}
   ],
   "next_actions": [
-    {"action": "snake_case_id", "label": "Short user-facing label", "priority": 1}
+    {"action": "one allowlisted action id", "priority": 1}
   ],
   "smart_cart": {
     "nudge": "1 sentence to encourage checkout or add items",
@@ -53,7 +56,7 @@ Given customer context and the product catalog, return ONE JSON object with all 
         "name": "Bundle name",
         "product_ids": ["id1", "id2"],
         "reason": "Why this bundle",
-        "savings": 15
+        "savings": 0
       }
     ]
   }
@@ -64,8 +67,11 @@ Rules:
 - Exclude items already in cart or wishlist from recommendations.
 - Prioritize cross-sell: phone→plan→accessory.
 - Weight signals: cart > wishlist > viewed > chat.
-- Bundles: suggest phone+plan or phone+accessory when relevant; savings 10-20.
-- next_actions: 2-3 contextual conversion steps for the funnel stage."""
+- Bundles: suggest phone+plan or phone+accessory when relevant. Never invent savings.
+- next_actions: 2-3 contextual steps using only browse_phones, compare_brands,
+  compare_top, view_plans, add_plan, complete_cart, review_cart, checkout,
+  add_accessory, or explore. Checkout is a simulated demo checkout.
+- Never claim a discount, payment, security guarantee, eligibility, or compatibility."""
 
 
 def _merge_signals(wishlist: list[Product], cart: list[Product], viewed: list[Product]) -> list[Product]:
@@ -200,6 +206,7 @@ def _ai_orchestrate(session_id: str, limit: int) -> dict | None:
     try:
         response = client.chat.completions.create(
             model=settings.openai_model,
+            reasoning_effort=settings.openai_reasoning_effort,
             messages=[
                 {"role": "system", "content": ORCHESTRATOR_PROMPT},
                 {"role": "user", "content": json.dumps(user_payload)},
@@ -261,14 +268,7 @@ def _ai_orchestrate(session_id: str, limit: int) -> dict | None:
 
     # Next actions
     raw_actions = data.get("next_actions", [])
-    next_actions = [
-        NextBestAction(
-            action=a.get("action", "explore"),
-            label=a.get("label", "Explore products"),
-            priority=a.get("priority", i + 1),
-        )
-        for i, a in enumerate(raw_actions[:3])
-    ]
+    next_actions = sanitize_next_best_actions(raw_actions)
     if not next_actions:
         _, next_actions, _ = get_next_best_actions(session_id)
 

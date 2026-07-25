@@ -2,6 +2,7 @@ import time
 import uuid
 
 from app.models.schemas import Product
+from app.services.commerce_store import commerce_store
 from app.services.product_catalog import catalog
 
 ABANDONMENT_THRESHOLD_SEC = 30  # demo: 30s inactive = abandoned
@@ -10,12 +11,10 @@ ABANDONMENT_THRESHOLD_SEC = 30  # demo: 30s inactive = abandoned
 class SessionStore:
     def __init__(self) -> None:
         self._wishlists: dict[str, set[str]] = {}
-        self._carts: dict[str, set[str]] = {}
         self._viewed: dict[str, list[str]] = {}
         self._cart_updated_at: dict[str, float] = {}
         self._abandoned: dict[str, bool] = {}
         self._recovery_discount: dict[str, float] = {}
-        self._orders: dict[str, list[dict]] = {}
         # Omnichannel: customer identity + channel tracking
         self._customer_to_session: dict[str, str] = {}
         self._session_to_customer: dict[str, str] = {}
@@ -26,12 +25,11 @@ class SessionStore:
     def get_or_create(self, session_id: str | None) -> str:
         sid = session_id or str(uuid.uuid4())
         self._wishlists.setdefault(sid, set())
-        self._carts.setdefault(sid, set())
         self._viewed.setdefault(sid, [])
         self._cart_updated_at.setdefault(sid, time.time())
         self._abandoned.setdefault(sid, False)
         self._recovery_discount.setdefault(sid, 0.0)
-        self._orders.setdefault(sid, [])
+        commerce_store.ensure_cart(sid)
         return sid
 
     def _touch_cart(self, session_id: str) -> None:
@@ -57,7 +55,7 @@ class SessionStore:
         return list(self._wishlists.get(session_id, set()))
 
     def get_cart_ids(self, session_id: str) -> list[str]:
-        return list(self._carts.get(session_id, set()))
+        return commerce_store.cart_ids(session_id)
 
     def get_wishlist(self, session_id: str) -> list[Product]:
         return catalog.get_by_ids(self.get_wishlist_ids(session_id))
@@ -78,52 +76,40 @@ class SessionStore:
 
     def add_to_cart(self, session_id: str, product_id: str) -> list[str]:
         self.get_or_create(session_id)
-        self._carts[session_id].add(product_id)
+        cart_ids = commerce_store.add_items(session_id, [product_id])
         self._last_cart_add[session_id] = product_id
         self._touch_cart(session_id)
-        return list(self._carts[session_id])
+        return cart_ids
 
     def get_last_cart_add(self, session_id: str) -> str | None:
         return self._last_cart_add.get(session_id)
 
     def add_bundle_to_cart(self, session_id: str, product_ids: list[str]) -> list[str]:
         self.get_or_create(session_id)
-        last_added: str | None = None
-        for pid in product_ids:
-            if catalog.get_by_id(pid):
-                self._carts[session_id].add(pid)
-                last_added = pid
-        if last_added:
-            self._last_cart_add[session_id] = last_added
+        cart_ids = commerce_store.add_items(session_id, product_ids)
         self._touch_cart(session_id)
-        return list(self._carts[session_id])
+        return cart_ids
 
     def remove_from_cart(self, session_id: str, product_id: str) -> list[str]:
         self.get_or_create(session_id)
-        self._carts[session_id].discard(product_id)
+        cart_ids = commerce_store.remove_items(session_id, [product_id])
         self._touch_cart(session_id)
-        return list(self._carts[session_id])
+        return cart_ids
 
     def clear_cart(self, session_id: str) -> None:
-        self._carts[session_id] = set()
+        commerce_store.clear_cart(session_id)
         self._abandoned[session_id] = False
         self._recovery_discount[session_id] = 0.0
 
     def toggle_cart(self, session_id: str, product_id: str) -> tuple[bool, list[str]]:
         self.get_or_create(session_id)
-        cart = self._carts[session_id]
-        if product_id in cart:
-            cart.remove(product_id)
-            added = False
-        else:
-            cart.add(product_id)
-            added = True
+        added, cart_ids = commerce_store.toggle_item(session_id, product_id)
         self._touch_cart(session_id)
-        return added, list(cart)
+        return added, cart_ids
 
     def mark_abandoned(self, session_id: str) -> bool:
         self.get_or_create(session_id)
-        if not self._carts[session_id]:
+        if not self.get_cart_ids(session_id):
             return False
         self._abandoned[session_id] = True
         self._recovery_discount[session_id] = 0.0
@@ -145,8 +131,9 @@ class SessionStore:
 
         recovery_message = ""
         if is_abandoned and cart:
+            item_label = "item" if len(cart) == 1 else "items"
             recovery_message = (
-                f"Welcome back! You left {len(cart)} item(s) in your cart. "
+                f"Welcome back! You left {len(cart)} {item_label} in your cart. "
                 "Your selections are ready when you are."
             )
 
@@ -163,12 +150,6 @@ class SessionStore:
 
     def get_recovery_discount(self, session_id: str) -> float:
         return self._recovery_discount.get(session_id, 0.0)
-
-    def record_order(self, session_id: str, order: dict) -> str:
-        order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
-        order["order_id"] = order_id
-        self._orders[session_id].append(order)
-        return order_id
 
     def record_channel(self, session_id: str, channel: str) -> None:
         self.get_or_create(session_id)
@@ -195,7 +176,7 @@ class SessionStore:
         self.get_or_create(source)
         self.get_or_create(target)
 
-        self._carts[target] = self._carts.get(target, set()) | self._carts.get(source, set())
+        commerce_store.merge_carts(source, target)
         self._wishlists[target] = self._wishlists.get(target, set()) | self._wishlists.get(source, set())
 
         merged_viewed = list(self._viewed.get(source, []))
@@ -215,8 +196,6 @@ class SessionStore:
                 self._recovery_discount.get(target, 0),
                 self._recovery_discount.get(source, 0),
             )
-
-        self._orders[target].extend(self._orders.get(source, []))
 
         source_channels = self._channels_used.get(source, set())
         self._channels_used.setdefault(target, set()).update(source_channels)

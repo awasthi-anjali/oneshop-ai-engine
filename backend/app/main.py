@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import chat, intelligence, omnichannel, products, recommendations
+from app.routers import chat, intelligence, omnichannel, orders, products, recommendations
 from app.services.ai_client import is_ai_enabled
 
 app = FastAPI(
@@ -25,6 +25,7 @@ app.include_router(products.router)
 app.include_router(intelligence.router)
 app.include_router(omnichannel.router)
 app.include_router(recommendations.router)
+app.include_router(orders.router)
 
 
 @app.get("/api/health")

@@ -494,6 +494,27 @@
   cursor: not-allowed;
 }
 
+.proposal-confirm-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.proposal-confirm-actions > button:last-child,
+.order-review-card > button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  padding: 9px 12px;
+}
+
+.order-review-card {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+.order-receipt-card {
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+}
+
 .proposal-warning {
   color: var(--error) !important;
 }
