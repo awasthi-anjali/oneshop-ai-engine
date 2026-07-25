@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
+from starlette.concurrency import run_in_threadpool
 
 from app.models.schemas import RecommendationInteractionRequest
 from app.services.behavioral_memory import behavioral_memory_store, bounded_memory_context
@@ -60,8 +61,9 @@ async def recommendation_profile(
     session_id: str | None = None,
     channel: str = Query(default="oneshop", pattern="^(oneshop|oneapp)$"),
 ) -> dict:
-    payload = get_personalized_recommendations(
-        user_id=user_id, session_id=session_id, channel=channel, limit=1
+    payload = await run_in_threadpool(
+        get_personalized_recommendations,
+        user_id=user_id, session_id=session_id, channel=channel, limit=1,
     )
     return {
         "user_id": user_id,
@@ -91,12 +93,9 @@ async def recommendation_updates(
             "version": current_version,
             "recommendations": [],
         }
-    payload = get_personalized_recommendations(
-        user_id=user_id,
-        session_id=session_id,
-        channel=channel,
-        query=query,
-        limit=limit,
+    payload = await run_in_threadpool(
+        get_personalized_recommendations,
+        user_id=user_id, session_id=session_id, channel=channel, query=query, limit=limit,
     )
     return {"changed": True, **payload}
 
@@ -109,10 +108,7 @@ async def recommendations(
     query: str = Query(default="", max_length=120),
     limit: int = Query(default=6, ge=1, le=12),
 ) -> dict:
-    return get_personalized_recommendations(
-        user_id=user_id,
-        session_id=session_id,
-        channel=channel,
-        query=query,
-        limit=limit,
+    return await run_in_threadpool(
+        get_personalized_recommendations,
+        user_id=user_id, session_id=session_id, channel=channel, query=query, limit=limit,
     )

@@ -7,7 +7,6 @@ import {
   DEMO_USERS,
   compareProducts,
   dismissAbandonment,
-  fetchProducts,
   fetchProductsWithMeta,
   getIntelligenceProfile,
   getCheckoutReview,
@@ -537,18 +536,19 @@ export default function ShopPage({
   useEffect(() => {
     async function init() {
       try {
-        const [catalog, session] = await Promise.all([
-          fetchProducts({ limit: 50 }),
+        const [result, session] = await Promise.all([
+          loadProducts(searchQuery, filter, brandFilter, priceRange),
           getSession(sessionId),
         ])
+        const catalog = result.products
         setCatalogBrands([...new Set(catalog.map((product) => product.brand))].sort())
         setProductNames(catalog.map((product) => product.name))
-
-        const result = await loadProducts(searchQuery, filter, brandFilter, priceRange)
         setProducts(result.products)
         setSearchMethod(result.search_method)
         applySession({ ...session, cart: session.cart })
-        await refreshIntelligence(session.session_id)
+        void refreshIntelligence(session.session_id).catch(() => {
+          setPersonalizationError('Personalization is still loading. The catalog remains available.')
+        })
       } finally {
         setLoading(false)
       }

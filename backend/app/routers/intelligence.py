@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
+from starlette.concurrency import run_in_threadpool
 
 from app.models.schemas import (
     AbandonmentResponse,
@@ -44,7 +45,7 @@ async def intelligence_profile(
         if user_id
         else session_store.resolve_session(session_id, customer_id)
     )
-    profile = get_intelligence_profile(sid, limit=limit)
+    profile = await run_in_threadpool(get_intelligence_profile, sid, limit=limit)
     abandon_data = profile.pop("abandonment", {})
     omni = get_omnichannel_context(sid, channel)
     profile.update({
