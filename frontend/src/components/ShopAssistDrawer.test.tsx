@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   CartProposal,
   ChatAction,
+  CheckoutReview,
+  OrderReceipt,
   Product,
   ShoppingNeed,
   ShopAssistRecommendation,
@@ -125,6 +127,55 @@ const cartProposal: CartProposal = {
   excluded_product_ids: [],
   one_time_total: 699,
   monthly_total: 85,
+}
+
+const checkoutReview: CheckoutReview = {
+  review_id: 'rev_1234567890',
+  session_id: 'session_123',
+  status: 'awaiting_confirmation',
+  items: [
+    {
+      product_id: phone.id,
+      name: phone.name,
+      category: phone.category,
+      currency: 'USD',
+      billing_period: 'one_time',
+      unit_amount_minor: 69900,
+    },
+    {
+      product_id: plan.id,
+      name: plan.name,
+      category: plan.category,
+      currency: 'USD',
+      billing_period: 'monthly',
+      unit_amount_minor: 8500,
+    },
+  ],
+  one_time_total_minor: 69900,
+  monthly_total_minor: 8500,
+  customer_name: 'Demo Customer',
+  email: 'demo@example.com',
+  payment_mode: 'demo_simulated',
+  payment_status: 'simulated',
+  payment_last4: '4242',
+  confirmation_token: 'secret-browser-token',
+  expires_at: '2099-01-01T00:00:00Z',
+}
+
+const orderReceipt: OrderReceipt = {
+  order_id: 'ORD-DEMO1234',
+  session_id: checkoutReview.session_id,
+  status: 'demo_order_confirmed',
+  payment_mode: 'demo_simulated',
+  payment_status: 'simulated',
+  payment_last4: '4242',
+  customer_name: checkoutReview.customer_name,
+  email: checkoutReview.email,
+  items: checkoutReview.items,
+  one_time_total_minor: 69900,
+  monthly_total_minor: 8500,
+  created_at: '2026-07-25T00:00:00Z',
+  idempotent_replay: false,
 }
 
 class MockSpeechRecognition {
@@ -300,7 +351,8 @@ describe('ShopAssistDrawer', () => {
     )
 
     expect(screen.getByRole('heading', { name: 'ShopAssist' })).toBeInTheDocument()
-    expect(screen.getByText('Catalog mode')).toBeInTheDocument()
+    expect(screen.queryByText('Catalog mode')).not.toBeInTheDocument()
+    expect(screen.queryByText('Limited mode')).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Close ShopAssist' })).toHaveLength(1)
     expect(screen.queryByText(/synthetic demo data/i)).not.toBeInTheDocument()
     expect(screen.queryByText('Context: catalog')).not.toBeInTheDocument()
@@ -447,6 +499,58 @@ describe('ShopAssistDrawer', () => {
 
     expect(screen.getByText(/already in your cart will not be added twice/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Allow & add item' })).toBeInTheDocument()
+  })
+
+  it('reviews an exact removal and exposes confirm and cancel without mutating immediately', async () => {
+    const user = userEvent.setup()
+    const onConfirmProposal = vi.fn()
+    const onCancelProposal = vi.fn()
+    render(
+      <ShopAssistDrawer
+        {...baseProps({
+          cartProposal: {
+            ...cartProposal,
+            operation: 'remove',
+            products: [plan],
+            product_ids: [plan.id],
+            one_time_total: 0,
+            monthly_total: 85,
+            resulting_one_time_total: 699,
+            resulting_monthly_total: 0,
+          },
+          onConfirmProposal,
+          onCancelProposal,
+        })}
+      />,
+    )
+
+    expect(screen.getByText('Cart after removal')).toBeInTheDocument()
+    expect(screen.getByText('Once: $699.00')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Allow & remove item' }))
+    expect(onConfirmProposal).toHaveBeenCalledWith(cartProposal.proposal_id)
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onCancelProposal).toHaveBeenCalledOnce()
+  })
+
+  it('shows trusted review facts and a simulated receipt without payment or email claims', () => {
+    const { rerender } = render(
+      <ShopAssistDrawer
+        {...baseProps({ checkoutReview, recommendations: [] })}
+      />,
+    )
+    const reviewRegion = screen.getByRole('region', { name: 'Final demo order review' })
+    expect(reviewRegion).toBeInTheDocument()
+    expect(reviewRegion).toHaveTextContent(/type yes, confirm, place order, or go ahead/i)
+    expect(screen.getByText(/no payment occurs and no email is sent/i)).toBeInTheDocument()
+
+    rerender(
+      <ShopAssistDrawer
+        {...baseProps({ orderReceipt, recommendations: [] })}
+      />,
+    )
+    expect(screen.getByRole('region', { name: 'Demo order receipt' })).toBeInTheDocument()
+    expect(screen.getByText(orderReceipt.order_id)).toBeInTheDocument()
+    expect(screen.getByText(/no real payment was processed/i)).toBeInTheDocument()
   })
 
   it('removes a consumed proposal instead of leaving it below the next response', () => {

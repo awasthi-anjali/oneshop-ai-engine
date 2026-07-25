@@ -62,7 +62,7 @@ export default function IdleCartNudge({ cartItems, onCheckout, onDismiss }: Prop
         Your current selections are ready whenever you want to continue.
       </p>
       <button type="button" className="idle-nudge-checkout" onClick={() => { setShow(false); onCheckout() }}>
-        Complete Purchase
+        Start demo checkout
       </button>
     </div>
   )

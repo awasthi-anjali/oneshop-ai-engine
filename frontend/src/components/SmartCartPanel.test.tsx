@@ -75,9 +75,10 @@ describe('SmartCartPanel trusted totals', () => {
 
     expect(screen.getByText('$699.00')).toBeInTheDocument()
     expect(screen.getByText('$85.00/month')).toBeInTheDocument()
-    expect(screen.getByText('Catalog compatible')).toBeInTheDocument()
-    expect(screen.getByText('No offer assumed')).toBeInTheDocument()
+    expect(screen.getByText('Catalog items')).toBeInTheDocument()
+    expect(screen.getByText('No discount assumed')).toBeInTheDocument()
     expect(screen.queryByText(/saved|% off|free shipping/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start demo checkout' })).toBeInTheDocument()
   })
 
   it('mutates only after the explicit compatible-bundle button is clicked', async () => {
@@ -85,7 +86,8 @@ describe('SmartCartPanel trusted totals', () => {
     const { props } = renderPanel()
 
     expect(props.onAddBundle).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: 'Allow & add bundle' }))
+    await user.click(screen.getByText('Suggested set: Device + Plan'))
+    await user.click(screen.getByRole('button', { name: 'Review & add set' }))
     expect(props.onAddBundle).toHaveBeenCalledOnce()
     expect(props.onAddBundle).toHaveBeenCalledWith(['unlimited-plus'])
   })

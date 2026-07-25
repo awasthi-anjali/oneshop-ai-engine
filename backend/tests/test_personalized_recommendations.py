@@ -155,6 +155,45 @@ def test_same_profile_continues_across_channels_without_cross_user_leakage():
     assert isolated["profile"]["total_interactions"] == 0
 
 
+def test_intelligence_profile_uses_the_same_isolated_cart_as_shopassist():
+    client = _client()
+    first_user = f"intelligence_a_{uuid.uuid4().hex}"
+    second_user = f"intelligence_b_{uuid.uuid4().hex}"
+
+    first = client.get(
+        "/api/intelligence/profile",
+        params={"user_id": first_user, "channel": "oneshop"},
+    ).json()
+    client.post(
+        "/api/customer/cart/add",
+        json={
+            "session_id": first["session_id"],
+            "product_id": "google-pixel-8",
+            "channel": "oneshop",
+        },
+    )
+    first_again = client.get(
+        "/api/intelligence/profile",
+        params={
+            "session_id": first["session_id"],
+            "user_id": first_user,
+            "channel": "oneshop",
+        },
+    ).json()
+    isolated = client.get(
+        "/api/intelligence/profile",
+        params={
+            "session_id": first["session_id"],
+            "user_id": second_user,
+            "channel": "oneshop",
+        },
+    ).json()
+
+    assert [item["id"] for item in first_again["cart"]] == ["google-pixel-8"]
+    assert isolated["session_id"] != first_again["session_id"]
+    assert isolated["cart"] == []
+
+
 def test_session_cart_and_wishlist_are_authoritative_exclusions():
     client = _client()
     user = f"exclusions_{uuid.uuid4().hex}"

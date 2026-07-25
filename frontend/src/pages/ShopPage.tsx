@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import {
   addBundleToCart,
   addToCart,
+  cancelCheckoutReview,
   confirmShopAssistCartProposal,
   DEMO_USERS,
   compareProducts,
@@ -9,10 +10,13 @@ import {
   fetchProducts,
   fetchProductsWithMeta,
   getIntelligenceProfile,
+  getCheckoutReview,
+  getOrder,
   getPersonalizationUserId,
   getPersonalizedRecommendations,
   getSession,
   getStoredSessionId,
+  getOrderByIdempotency,
   ensureSessionId,
   onPersonalizationUserChange,
   removeFromCart,
@@ -27,9 +31,10 @@ import {
   type CrossSellItem,
   type ChatAction,
   type CartProposal,
+  type CheckoutReview,
   type ChatMessage,
   type ChatStatus,
-  type CheckoutResponse,
+  type OrderReceipt,
   type NextBestAction,
   type PageContext,
   type Product,
@@ -55,6 +60,7 @@ import ProfileSwitcher from '../components/ProfileSwitcher'
 import RecommendationsPanel from '../components/RecommendationsPanel'
 import ShopAssistDrawer from '../components/ShopAssistDrawer'
 import ShopAssistFab from '../components/ShopAssistFab'
+import SmartCartPanel from '../components/SmartCartPanel'
 import { useCartAbandonmentTracking } from '../hooks/useCartAbandonment'
 import { useCrossTabSync } from '../hooks/useCrossTabSync'
 import {
@@ -84,6 +90,21 @@ const EMPTY_NEED: ShoppingNeed = {
   nice_to_haves: [],
 }
 
+const ACTIVE_REVIEW_KEY = 'oneshop.active-checkout-review'
+
+function loadActiveReview(): CheckoutReview | null {
+  try {
+    const raw = sessionStorage.getItem(ACTIVE_REVIEW_KEY)
+    if (!raw) return null
+    const review = JSON.parse(raw) as CheckoutReview
+    return review.confirmation_token && new Date(review.expires_at).getTime() > Date.now()
+      ? review
+      : null
+  } catch {
+    return null
+  }
+}
+
 const discoveryCategoryLabel = (category: string) => {
   const labels: Record<string, string> = {
     all: 'For You',
@@ -105,6 +126,7 @@ export default function ShopPage({
 }: Props) {
   const [products, setProducts] = useState<Product[]>([])
   const [sessionId, setSessionId] = useState<string | null>(() => ensureSessionId())
+  const [cartVersion, setCartVersion] = useState<number | null>(null)
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set())
   const [cartIds, setCartIds] = useState<Set<string>>(new Set())
   const [viewedIds, setViewedIds] = useState<Set<string>>(new Set())
@@ -170,6 +192,7 @@ export default function ShopPage({
   const [recommendationPipeline, setRecommendationPipeline] = useState('rules')
 
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [cartOpen, setCartOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [need, setNeed] = useState<ShoppingNeed>(EMPTY_NEED)
@@ -177,6 +200,8 @@ export default function ShopPage({
   const [comparison, setComparison] = useState<Product[]>([])
   const [assistActions, setAssistActions] = useState<ChatAction[]>([])
   const [assistCartProposal, setAssistCartProposal] = useState<CartProposal | null>(null)
+  const [checkoutReview, setCheckoutReview] = useState<CheckoutReview | null>(loadActiveReview)
+  const [orderReceipt, setOrderReceipt] = useState<OrderReceipt | null>(null)
   const [assistStatus, setAssistStatus] = useState<ChatStatus | null>(null)
   const [assistMode, setAssistMode] = useState<'ai' | 'fallback' | null>(null)
   const [assistContext, setAssistContext] = useState<PageContext | null>(null)
@@ -190,6 +215,7 @@ export default function ShopPage({
   const launcherRef = useRef<HTMLElement | null>(null)
   const confirmationInFlight = useRef(false)
   const confirmationKeys = useRef(new Map<string, string>())
+  const orderConfirmationKeys = useRef(new Map<string, string>())
   const impressionKeys = useRef(new Set<string>())
 
   useCartAbandonmentTracking(cartIds.size, sessionId)
@@ -199,24 +225,120 @@ export default function ShopPage({
     []
   )
 
+  useEffect(() => {
+    if (!checkoutReview?.confirmation_token) return
+    let cancelled = false
+    const token = checkoutReview.confirmation_token
+    getCheckoutReview(
+      checkoutReview.review_id,
+      checkoutReview.session_id,
+      personalizationUserId,
+    ).then(async (persisted) => {
+      if (cancelled) return
+      if (
+        persisted.status === 'awaiting_confirmation'
+        && new Date(persisted.expires_at).getTime() > Date.now()
+      ) {
+        const recovered = { ...persisted, confirmation_token: token }
+        setCheckoutReview(recovered)
+        sessionStorage.setItem(ACTIVE_REVIEW_KEY, JSON.stringify(recovered))
+        return
+      }
+      if (persisted.status === 'consumed' && persisted.consumed_order_id) {
+        const receipt = await getOrder(
+          persisted.consumed_order_id,
+          persisted.session_id,
+          personalizationUserId,
+        )
+        if (!cancelled) setOrderReceipt(receipt)
+      }
+      if (!cancelled) {
+        setCheckoutReview(null)
+        sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setCheckoutReview(null)
+        sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
+      }
+    })
+
+    const expiresIn = Math.max(0, new Date(checkoutReview.expires_at).getTime() - Date.now())
+    const expiryTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        setCheckoutReview(null)
+        sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
+        setAssistError('The checkout review expired. Open checkout to create a fresh review.')
+      }
+    }, expiresIn)
+    return () => {
+      cancelled = true
+      window.clearTimeout(expiryTimer)
+    }
+  }, [checkoutReview?.review_id, personalizationUserId])
+
   const applySession = useCallback((session: {
     session_id: string
+    cart_version?: number
     wishlist_ids: string[]
     cart_ids: string[]
     viewed_ids: string[]
     cart?: Product[]
   }) => {
     setSessionId(session.session_id)
+    if (typeof session.cart_version === 'number') setCartVersion(session.cart_version)
     setWishlistIds(new Set(session.wishlist_ids))
     setCartIds(new Set(session.cart_ids))
     setViewedIds(new Set(session.viewed_ids))
     if (session.cart) setCartProducts(session.cart)
   }, [])
 
-  const refreshIntelligence = useCallback(async (sid: string | null) => {
+  useEffect(() => {
+    if (cartVersion === null) return
+    if (
+      assistCartProposal?.cart_version !== undefined
+      && assistCartProposal.cart_version !== cartVersion
+    ) {
+      setAssistCartProposal(null)
+      setAssistActions((current) => current.filter((action) => !action.type.startsWith('PROPOSE_')))
+    }
+    if (
+      checkoutReview?.cart_version !== undefined
+      && checkoutReview.cart_version !== cartVersion
+    ) {
+      setCheckoutReview(null)
+      sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
+      setAssistError('Your cart changed. Open checkout to create a fresh final review.')
+    }
+  }, [
+    assistCartProposal?.cart_version,
+    cartVersion,
+    checkoutReview?.cart_version,
+  ])
+
+  useEffect(() => {
+    if (!assistCartProposal?.expires_at) return
+    const expiresIn = Math.max(
+      0,
+      new Date(assistCartProposal.expires_at).getTime() - Date.now(),
+    )
+    const expiryTimer = window.setTimeout(() => {
+      setAssistCartProposal((current) => (
+        current?.proposal_id === assistCartProposal.proposal_id ? null : current
+      ))
+      setAssistActions((current) => current.filter((action) => !action.type.startsWith('PROPOSE_')))
+      setAssistError('That cart proposal expired. Ask ShopAssist for a fresh review.')
+    }, expiresIn)
+    return () => window.clearTimeout(expiryTimer)
+  }, [assistCartProposal?.expires_at, assistCartProposal?.proposal_id])
+
+  const refreshIntelligence = useCallback(async (
+    sid: string | null,
+    userId: string = personalizationUserId,
+  ) => {
     setRecLoading(true)
     try {
-      const profile = await getIntelligenceProfile(sid, channel)
+      const profile = await getIntelligenceProfile(sid, channel, userId)
       setSessionId(profile.session_id)
       setIntent(profile.intent)
       setAiPowered(profile.ai_powered)
@@ -231,7 +353,7 @@ export default function ShopPage({
         crossSell: profile.cross_sell_suggestions ?? [],
         nudge: profile.nudge,
         checkoutTip: profile.checkout_tip,
-        aiPowered: profile.ai_powered,
+        aiPowered: false,
         subtotal: profile.subtotal,
         discount: profile.discount ?? profile.estimated_savings ?? 0,
         total: profile.total ?? profile.subtotal,
@@ -246,7 +368,7 @@ export default function ShopPage({
     } finally {
       setRecLoading(false)
     }
-  }, [channel])
+  }, [channel, personalizationUserId])
 
   const applyPersonalized = useCallback((response: Awaited<ReturnType<typeof getPersonalizedRecommendations>>) => {
     setRecommendations(response.recommendations)
@@ -343,9 +465,33 @@ export default function ShopPage({
     setAssistError(null)
     setConfirmed(false)
     setAssistCartProposal(null)
+    setCheckoutReview(null)
+    setOrderReceipt(null)
+    setCartIds(new Set())
+    setCartProducts([])
+    setCartVersion(0)
+    setAbandonment(null)
+    setSmartCart((current) => ({
+      ...current,
+      bundles: [],
+      crossSell: [],
+      nudge: '',
+      checkoutTip: '',
+      subtotal: 0,
+      discount: 0,
+      total: 0,
+      oneTimeTotal: 0,
+      monthlyTotal: 0,
+      estimatedSavings: 0,
+      cartItems: [],
+    }))
+    sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
     setFilter('all')
     setCatalogMode('all')
     setShowFullCatalog(false)
+    void refreshIntelligence(sessionId, userId).catch(() => {
+      setPersonalizationError('This profile changed, but its cart could not refresh yet.')
+    })
   }
 
   const reloadFromServer = useCallback(async () => {
@@ -487,6 +633,9 @@ export default function ShopPage({
   const handleAddToCart = async (productId: string) => {
     const session = await addToCart(productId, sessionId, channel)
     applySession({ ...session, cart: session.cart })
+    setAssistCartProposal(null)
+    setCheckoutReview(null)
+    sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
     observeInteraction('cart_add', productId)
     await refreshIntelligence(session.session_id)
   }
@@ -494,6 +643,9 @@ export default function ShopPage({
   const handleRemoveFromCart = async (productId: string) => {
     const session = await removeFromCart(productId, sessionId, channel)
     applySession({ ...session, cart: session.cart })
+    setAssistCartProposal(null)
+    setCheckoutReview(null)
+    sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
     observeInteraction('cart_remove', productId)
     await refreshIntelligence(session.session_id)
   }
@@ -501,14 +653,35 @@ export default function ShopPage({
   const handleAddBundle = async (productIds: string[]) => {
     const session = await addBundleToCart(productIds, sessionId, channel)
     applySession({ ...session, cart: session.cart })
+    setAssistCartProposal(null)
+    setCheckoutReview(null)
+    sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
     await refreshIntelligence(session.session_id)
   }
 
-  const handleCheckoutSuccess = async (_order: CheckoutResponse) => {
-    setAbandonment(null)
-    const session = await getSession(sessionId)
-    applySession({ ...session, cart: session.cart })
-    await refreshIntelligence(session.session_id)
+  const handleCheckoutReview = (review: CheckoutReview) => {
+    setAssistCartProposal(null)
+    if (typeof review.cart_version === 'number') setCartVersion(review.cart_version)
+    setCheckoutReview(review)
+    setOrderReceipt(null)
+    sessionStorage.setItem(ACTIVE_REVIEW_KEY, JSON.stringify(review))
+    setShowCheckout(false)
+    setCartOpen(false)
+    setDrawerOpen(true)
+    setAssistContext({
+      surface: 'cart',
+      entry_point: 'cart',
+      visible_product_ids: review.items.map((item) => item.product_id),
+    })
+    setMessages((current) => [
+      ...current,
+      {
+        role: 'assistant',
+        content: 'I prepared the trusted final demo order review. Check it below, then reply with yes, confirm, place order, or go ahead as the entire message.',
+        status: 'recommended',
+        mode: 'fallback',
+      },
+    ])
   }
 
   const handleDismissAbandonment = async () => {
@@ -522,6 +695,7 @@ export default function ShopPage({
     editableDraft?: string
   ) => {
     launcherRef.current = source ?? (document.activeElement as HTMLElement | null)
+    setCartOpen(false)
     setAssistContext(context)
     if (editableDraft !== undefined) setDraft(editableDraft)
     setDrawerOpen(true)
@@ -558,6 +732,23 @@ export default function ShopPage({
     setConfirmed(false)
     setMessages((current) => [...current, { role: 'user', content: text }])
     setAssistLoading(true)
+    const normalized = text.toLowerCase().replace(/[^a-z\s]/g, '').trim().replace(/\s+/g, ' ')
+    const isCheckoutTransition = [
+      'yes', 'confirm', 'place order', 'go ahead', 'no', 'cancel', 'go back',
+    ].includes(normalized)
+    const orderKey = checkoutReview
+      ? orderConfirmationKeys.current.get(checkoutReview.review_id) ?? crypto.randomUUID()
+      : null
+    if (checkoutReview && orderKey) {
+      orderConfirmationKeys.current.set(checkoutReview.review_id, orderKey)
+    }
+    const checkoutConfirmation = (
+      checkoutReview?.confirmation_token && isCheckoutTransition && orderKey
+    ) ? {
+        review_id: checkoutReview.review_id,
+        confirmation_token: checkoutReview.confirmation_token,
+        idempotency_key: orderKey,
+      } : undefined
 
     try {
       const response = await sendMessage(
@@ -581,7 +772,8 @@ export default function ShopPage({
             .map(([category]) => category),
           price_centroid: personalizedProfile.price_centroid,
           interaction_count: personalizedProfile.total_interactions,
-        } : undefined
+        } : undefined,
+        checkoutConfirmation,
       )
       setSessionId(response.session_id)
       setNeed(response.need_profile)
@@ -603,13 +795,82 @@ export default function ShopPage({
           mode: response.mode,
         },
       ])
+      if (response.open_checkout) {
+        setShowCheckout(true)
+      }
+      if (response.checkout_review_status === 'cancelled') {
+        setCheckoutReview(null)
+        sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
+      }
+      if (response.order_receipt) {
+        setOrderReceipt(response.order_receipt)
+        setCheckoutReview(null)
+        setCartIds(new Set())
+        setCartProducts([])
+        setSmartCart((current) => ({
+          ...current,
+          cartItems: [],
+          subtotal: 0,
+          discount: 0,
+          total: 0,
+          oneTimeTotal: 0,
+          monthlyTotal: 0,
+          bundles: [],
+          crossSell: [],
+        }))
+        sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
+        setAbandonment(null)
+        void reloadFromServer().catch(() => {
+          setAssistError('Demo order saved. Shopping recommendations could not refresh yet.')
+        })
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'ShopAssist could not respond.'
-      setAssistError(message.replace(/port\s*8000/gi, 'service'))
+      if (checkoutReview && orderKey && isCheckoutTransition && sessionId) {
+        try {
+          const recovered = await getOrderByIdempotency(
+            orderKey,
+            sessionId,
+            personalizationUserId,
+          )
+          setOrderReceipt(recovered)
+          setCheckoutReview(null)
+          setCartIds(new Set())
+          setCartProducts([])
+          sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
+          void reloadFromServer().catch(() => {
+            setAssistError('Demo order recovered. Shopping recommendations could not refresh yet.')
+          })
+          setMessages((current) => [
+            ...current,
+            {
+              role: 'assistant',
+              content: `Recovered demo order ${recovered.order_id}. No duplicate order was created.`,
+              status: 'recommended',
+              mode: 'fallback',
+            },
+          ])
+          return
+        } catch {
+          // No persisted order exists for this key; surface the original error.
+        }
+      }
+      const errorMessage = error instanceof Error ? error.message : 'ShopAssist could not respond.'
+      setAssistError(errorMessage.replace(/port\s*8000/gi, 'service'))
     } finally {
       setAssistLoading(false)
     }
-  }, [assistContext, assistLoading, channel, draft, personalizationUserId, personalizedProfile, products, sessionId])
+  }, [
+    assistContext,
+    assistLoading,
+    channel,
+    checkoutReview,
+    draft,
+    personalizationUserId,
+    personalizedProfile,
+    products,
+    reloadFromServer,
+    sessionId,
+  ])
 
   const handleRemoveNeed = (key: keyof ShoppingNeed, value?: string) => {
     setNeed((current) => {
@@ -663,24 +924,29 @@ export default function ShopPage({
         channel,
       )
       setSessionId(result.session_id)
+      setCartVersion(result.cart_version)
       setCartIds(new Set(result.cart_summary.items.map((product) => product.id)))
       setCartProducts(result.cart_summary.items)
       setAssistCartProposal(null)
       setAssistActions((current) => current.filter(
         (action) =>
           action.type !== 'PROPOSE_ADD_TO_CART'
-          && action.type !== 'PROPOSE_ADD_BUNDLE',
+          && action.type !== 'PROPOSE_ADD_BUNDLE'
+          && action.type !== 'PROPOSE_REMOVE_FROM_CART',
       ))
-      const addedProducts = result.cart_summary.items.filter((product) =>
-        result.added_product_ids.includes(product.id),
-      )
+      const changedIds = result.operation === 'remove'
+        ? result.removed_product_ids ?? []
+        : result.added_product_ids
+      const changedProducts = products.filter((product) => changedIds.includes(product.id))
       setMessages((current) => [
         ...current,
         {
           role: 'assistant',
-          content: addedProducts.length > 0
-            ? `Added ${addedProducts.map((product) => product.name).join(' and ')} to your cart. Your cart now has ${result.cart_summary.total_items} item${result.cart_summary.total_items === 1 ? '' : 's'}.`
-            : 'Those exact items were already in your cart. Nothing was added twice.',
+          content: changedProducts.length > 0
+            ? `${result.operation === 'remove' ? 'Removed' : 'Added'} ${changedProducts.map((product) => product.name).join(' and ')} ${result.operation === 'remove' ? 'from' : 'to'} your cart. Your cart now has ${result.cart_summary.total_items} item${result.cart_summary.total_items === 1 ? '' : 's'}.`
+            : result.operation === 'remove'
+              ? 'Those items were no longer in your cart. Nothing else changed.'
+              : 'Those exact items were already in your cart. Nothing was added twice.',
           status: 'recommended',
           mode: 'fallback',
         },
@@ -691,7 +957,7 @@ export default function ShopPage({
       try {
         await refreshIntelligence(result.session_id)
       } catch {
-        setAssistError('Added to cart. Recommendations could not refresh yet.')
+        setAssistError('Cart updated. Recommendations could not refresh yet.')
       }
     } catch (error) {
       setAssistError(
@@ -702,6 +968,30 @@ export default function ShopPage({
     } finally {
       confirmationInFlight.current = false
       setConfirming(false)
+    }
+  }
+
+  const handleCancelCheckout = async () => {
+    if (!checkoutReview || !sessionId) return
+    try {
+      await cancelCheckoutReview(
+        checkoutReview.review_id,
+        sessionId,
+        personalizationUserId,
+      )
+      setCheckoutReview(null)
+      sessionStorage.removeItem(ACTIVE_REVIEW_KEY)
+      setMessages((current) => [
+        ...current,
+        {
+          role: 'assistant',
+          content: 'Demo checkout cancelled. Your cart is unchanged.',
+          status: 'recommended',
+          mode: 'fallback',
+        },
+      ])
+    } catch (error) {
+      setAssistError(error instanceof Error ? error.message : 'Could not cancel checkout')
     }
   }
 
@@ -797,7 +1087,11 @@ export default function ShopPage({
 
   return (
     <>
-      <div className={`shop-layout ${layout}`}>
+      <div
+        className={`shop-layout ${layout} ${
+          drawerOpen ? 'assistant-open' : cartOpen ? 'cart-open' : ''
+        }`}
+      >
         <section className="shop-main">
           <ProfileSwitcher userId={personalizationUserId} onChange={handleProfileChange} />
           <div className="discovery-tabs" role="tablist" aria-label="Personalized product categories">
@@ -830,7 +1124,7 @@ export default function ShopPage({
             currentChannel={channel}
           />
 
-          {abandonment?.is_abandoned && (
+          {abandonment?.is_abandoned && !drawerOpen && !showCheckout && !checkoutReview && (
             <AbandonmentBanner
               message={abandonment.recovery_message}
               onCheckout={() => setShowCheckout(true)}
@@ -1206,16 +1500,64 @@ export default function ShopPage({
           loading={recLoading}
           aiPowered={aiPowered}
           recommendationPipeline={recommendationPipeline}
-          smartCart={smartCart}
-          onCheckout={() => setShowCheckout(true)}
+        />
+      </div>
+
+      {!drawerOpen && !cartOpen && (
+        <button
+          type="button"
+          className="cart-fab"
+          aria-label={`Open cart with ${cartIds.size} ${cartIds.size === 1 ? 'item' : 'items'}`}
+          onClick={() => {
+            setDrawerOpen(false)
+            setCartOpen(true)
+          }}
+        >
+          <span>Cart</span>
+          <strong>{cartIds.size}</strong>
+        </button>
+      )}
+
+      <aside
+        className={`cart-drawer ${cartOpen ? 'open' : ''}`}
+        aria-label="Shopping cart"
+        aria-hidden={!cartOpen}
+      >
+        <div className="cart-drawer-header">
+          <div>
+            <span>Trusted catalog totals</span>
+            <h2>Shopping cart</h2>
+          </div>
+          <button
+            type="button"
+            aria-label="Close cart"
+            onClick={() => setCartOpen(false)}
+          >
+            ×
+          </button>
+        </div>
+        <SmartCartPanel
+          bundles={smartCart.bundles}
+          crossSell={smartCart.crossSell}
+          nudge={smartCart.nudge}
+          checkoutTip={smartCart.checkoutTip}
+          aiPowered={smartCart.aiPowered}
+          cartCount={cartIds.size}
+          cartItems={smartCart.cartItems}
+          oneTimeTotal={smartCart.oneTimeTotal}
+          monthlyTotal={smartCart.monthlyTotal}
+          onCheckout={() => {
+            setCartOpen(false)
+            setShowCheckout(true)
+          }}
           onAddBundle={handleAddBundle}
           onAddCrossSell={handleAddToCart}
           onRemoveFromCart={handleRemoveFromCart}
         />
-      </div>
+      </aside>
 
       <ShopAssistFab
-        hidden={drawerOpen}
+        hidden={drawerOpen || cartOpen}
         onOpen={(source) =>
           openAssistant(
             assistContext ?? {
@@ -1249,6 +1591,8 @@ export default function ShopPage({
         comparison={comparison}
         actions={assistActions}
         cartProposal={assistCartProposal}
+        checkoutReview={checkoutReview}
+        orderReceipt={orderReceipt}
         confirming={confirming}
         confirmed={confirmed}
         onClose={closeAssistant}
@@ -1259,6 +1603,13 @@ export default function ShopPage({
         onRemoveNeed={handleRemoveNeed}
         onAction={handleAssistAction}
         onConfirmProposal={handleConfirmProposal}
+        onCancelProposal={() => {
+          setAssistCartProposal(null)
+          setAssistActions((current) => current.filter(
+            (action) => !action.type.startsWith('PROPOSE_'),
+          ))
+        }}
+        onCancelCheckout={handleCancelCheckout}
         onViewPicks={() => {
           setFilter('all')
           setCatalogMode(drawerRecommendationMode === 'request' ? 'picks' : 'all')
@@ -1293,10 +1644,9 @@ export default function ShopPage({
         open={showCheckout}
         cart={cartProducts}
         sessionId={sessionId}
-        oneTimeTotal={smartCart.oneTimeTotal}
-        monthlyTotal={smartCart.monthlyTotal}
+        userId={personalizationUserId}
         onClose={() => setShowCheckout(false)}
-        onSuccess={handleCheckoutSuccess}
+        onReview={handleCheckoutReview}
       />
 
       <CompareModal
@@ -1306,11 +1656,13 @@ export default function ShopPage({
         onClose={() => setCompareOpen(false)}
       />
 
-      <IdleCartNudge
-        cartItems={cartProducts}
-        onCheckout={() => setShowCheckout(true)}
-        onDismiss={() => {}}
-      />
+      {!showCheckout && !drawerOpen && !cartOpen && !selectedProduct && !compareOpen && (
+        <IdleCartNudge
+          cartItems={cartProducts}
+          onCheckout={() => setShowCheckout(true)}
+          onDismiss={() => {}}
+        />
+      )}
     </>
   )
 }

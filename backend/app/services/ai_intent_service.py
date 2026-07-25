@@ -39,6 +39,7 @@ def extract_intent(session_id: str) -> CustomerIntent:
     try:
         response = client.chat.completions.create(
             model=settings.openai_model,
+            reasoning_effort=settings.openai_reasoning_effort,
             messages=[
                 {"role": "system", "content": INTENT_PROMPT},
                 {"role": "user", "content": json.dumps(context)},

@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.config import settings
 from app.models.schemas import ChatRequest, ChatStatus, ReasonCode
 from app.services.session_store import session_store
 from app.services.shopassist_service import shopassist
@@ -56,6 +57,48 @@ def test_golden_discovery_and_boundaries(client, query, status, ids):
     assert len(selected) <= 3
 
 
+def test_service_handoff_uses_neutral_customer_copy(client):
+    data = post(client, "Why is my bill wrong?").json()
+
+    assert data["status"] == "service_handoff"
+    assert data["message"].endswith("help from customer support.")
+    assert data["actions"][0]["label"] == "Contact customer support"
+    assert "Frag Magenta" not in data["message"]
+    assert "Frag Magenta" not in data["actions"][0]["label"]
+
+
+@pytest.mark.parametrize("message", ["sup", "what can you do"])
+def test_casual_and_capability_messages_do_not_route_to_support(client, message):
+    data = post(client, message).json()
+
+    assert data["status"] != "service_handoff"
+    assert "customer support" not in data["message"].lower()
+    assert data["recommendations"] == []
+
+
+def test_explicit_service_terms_override_bad_ai_classification(monkeypatch):
+    async def misclassified(*_args, **_kwargs):
+        return {
+            "intent": "unsupported",
+            "goal": "converse",
+            "scope": "retain",
+        }
+
+    monkeypatch.setattr(shopassist, "_ai_parse", misclassified)
+    response = asyncio.run(
+        shopassist.chat(
+            ChatRequest(
+                message="Why is my bill wrong?",
+                session_id=str(uuid.uuid4()),
+            )
+        )
+    )
+
+    assert response.status.value == "service_handoff"
+    assert response.message.endswith("help from customer support.")
+    assert response.actions[0].label == "Contact customer support"
+
+
 def test_g01_reasons_are_grounded(client):
     data = post(client, "Android camera phone under $700").json()
     pixel = data["recommendations"][0]
@@ -66,6 +109,27 @@ def test_g01_reasons_are_grounded(client):
         ReasonCode.CAMERA_MATCH.value,
         ReasonCode.PLATFORM_MATCH.value,
     }
+
+
+def test_catalog_browse_answers_the_question_without_stale_plan_scope(client):
+    categories = post(client, "What categories do you have?").json()
+    assert categories["selected_tool"] == "catalog_browse"
+    assert all(
+        label in categories["message"]
+        for label in ("phones", "tablets", "mobile plans", "accessories")
+    )
+    assert categories["recommendations"] == []
+
+    phones = post(client, "What types of phones do you have?").json()
+    assert phones["selected_tool"] == "catalog_browse"
+    assert phones["need_profile"]["categories"] == ["phone"]
+    assert phones["recommendations"]
+    assert all(
+        recommendation["product"]["category"] == "phone"
+        for recommendation in phones["recommendations"]
+    )
+    assert "Matching in-stock options" in phones["message"]
+    assert "is an in-stock catalog match" not in phones["message"]
 
 
 def test_compare_is_two_validated_phones_with_exact_difference(client):
@@ -221,6 +285,19 @@ def test_budget_paraphrases_are_understood_as_grounded_phone_no_match(client, qu
     assert "haven't relaxed your budget" in data["message"]
 
 
+def test_written_number_budget_is_enforced(client):
+    data = post(
+        client,
+        "show me an Android phone under four hundred dollars",
+    ).json()
+
+    assert data["status"] == "no_match"
+    assert data["need_profile"]["categories"] == ["phone"]
+    assert data["need_profile"]["device_budget_max"] == 400
+    assert data["recommendations"] == []
+    assert "at or below $400" in data["message"]
+
+
 @pytest.mark.parametrize("term", ["cashback", "cashbacks", "promotion", "rebate"])
 def test_promotion_synonyms_stay_grounded_and_in_scope(client, term):
     data = post(client, f"Is there any {term} on a phone?").json()
@@ -279,6 +356,57 @@ def test_ambiguous_natural_language_can_be_classified_by_ai(monkeypatch):
     assert response.status == ChatStatus.RECOMMENDED
     assert response.mode.value == "ai"
     assert response.recommendations[0].product.id == "google-pixel-8"
+
+
+def test_ai_catalog_scope_replaces_stale_phone_context(monkeypatch):
+    async def interpreted(text, _assistant_context):
+        if "overall" in text.lower():
+            return {
+                "intent": "shopping",
+                "goal": "catalog_browse",
+                "scope": "replace",
+                "browse_categories": [
+                    "phone", "plan", "tablet", "accessory", "device",
+                ],
+            }
+        return {
+            "intent": "shopping",
+            "goal": "catalog_browse",
+            "scope": "replace",
+            "need_patch": {
+                "categories": ["phone"],
+                "platform": "android",
+                "device_budget_max": 700,
+            },
+            "browse_categories": ["phone"],
+        }
+
+    monkeypatch.setattr(shopassist, "_ai_parse", interpreted)
+    sid = str(uuid.uuid4())
+    phones = asyncio.run(
+        shopassist.chat(
+            ChatRequest(message="What kinds of phones are available?", session_id=sid)
+        )
+    )
+    overview = asyncio.run(
+        shopassist.chat(
+            ChatRequest(message="What products do you have overall?", session_id=sid)
+        )
+    )
+
+    assert phones.mode.value == "ai"
+    assert phones.need_profile.categories == ["phone"]
+    assert phones.need_profile.platform == "android"
+    assert phones.need_profile.device_budget_max == 700
+    assert all(
+        recommendation.product.price <= 700
+        and "android" in recommendation.product.tags
+        for recommendation in phones.recommendations
+    )
+    assert overview.mode.value == "ai"
+    assert overview.selected_tool == "catalog_browse"
+    assert overview.need_profile.categories == []
+    assert overview.recommendations == []
 
 
 @pytest.mark.parametrize(
@@ -377,7 +505,10 @@ def test_provider_timeout_returns_valid_fallback(monkeypatch, caplog):
     assert response.status == ChatStatus.RECOMMENDED
     assert response.mode.value == "fallback"
     assert response.recommendations[0].product.id == "samsung-a54"
-    assert "ShopAssist need parser fallback model=gpt-4o-mini error=TimeoutError" in caplog.text
+    assert (
+        f"ShopAssist interpreter fallback model={settings.shopassist_intent_model} "
+        "error=TimeoutError"
+    ) in caplog.text
 
 
 class _MalformedMessage:

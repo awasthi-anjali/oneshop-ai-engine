@@ -10,7 +10,7 @@ from app.services.product_catalog import catalog
 MAX_CROSS_SELL = 2
 MAX_BUNDLES = 1
 
-_DEFAULT_NUDGE = "Review your cart and compatible add-ons before checkout."
+_DEFAULT_NUDGE = "Review trusted totals and optional catalog suggestions before demo checkout."
 _EMPTY_NUDGE = "Add items to your cart to see compatible add-ons."
 
 
@@ -23,7 +23,10 @@ def _recalculate_bundle(bundle: BundleSuggestion, products: list[Product]) -> Bu
         "total_price": original_total,
         "discount_percent": 0.0,
         "savings": 0.0,
-        "reason": "Compatible add-ons selected from the current catalog.",
+        "reason": (
+            "Suggested items from the current catalog. Verify accessory fit "
+            "and plan eligibility."
+        ),
     })
 
 
@@ -32,6 +35,16 @@ def _catalog_product(product_id: str, cart_ids: set[str]) -> Product | None:
     if not product or not product.in_stock or product.id in cart_ids:
         return None
     return product
+
+
+def _safe_cross_sell_reason(product: Product) -> str:
+    if product.category == ProductCategory.PLAN:
+        return "General service option; eligibility is not assumed"
+    if "audio" in product.tags:
+        return f"{product.brand} wireless audio option"
+    if "case" in product.tags:
+        return "Protective case option; verify model fit before purchase"
+    return "Optional item from the current catalog"
 
 
 def validate_smart_cart_output(smart: dict[str, Any]) -> dict[str, Any]:
@@ -48,7 +61,7 @@ def validate_smart_cart_output(smart: dict[str, Any]) -> dict[str, Any]:
         cross_sell.append(CrossSellItem(
             product=product,
             rate=0,
-            reason="Compatible catalog add-on",
+            reason=_safe_cross_sell_reason(product),
         ))
         if len(cross_sell) >= MAX_CROSS_SELL:
             break
