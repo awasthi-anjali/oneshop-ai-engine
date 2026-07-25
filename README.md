@@ -5,8 +5,8 @@ AI-powered shopping intelligence engine for **OneShop (Web)** and **OneApp (Mobi
 ## ShopAssist V1
 
 The current product slice is a bounded phone-and-plan purchase guide embedded in
-OneShop, with grounded recommendations, explicit cart confirmation, and an
-accessible consumer light theme.
+OneShop, with grounded recommendations, explicit add/remove confirmation,
+durable simulated ordering, and an accessible consumer light theme.
 
 - [Product requirements](docs/shopassist/PRD.md)
 - [Implementation plan](docs/shopassist/IMPLEMENTATION_PLAN.md)
@@ -20,7 +20,9 @@ accessible consumer light theme.
 ### 1. ShopAssist V1
 The commerce-bounded assistant runs in a persistent OneShop drawer, extracts a
 structured shopping need, returns grounded phone-and-plan picks, and requires
-explicit confirmation before an exact bundle cart mutation.
+explicit confirmation before exact add or remove mutations. Checkout creates an
+immutable backend review and accepts only a deterministic confirmation phrase
+before saving one simulated order.
 
 ### 2. Personalized Discovery (prototype)
 - Browse all products with **Wishlist** and **Add to Cart** on each card
@@ -32,11 +34,17 @@ explicit confirmation before an exact bundle cart mutation.
 - Contextual banner suggesting compare, add plan, checkout, bundle actions
 - Funnel stage detection (browse → consider → cart → checkout)
 
-### 4. Smart Cart & Checkout (prototype; not ShopAssist V1 scope)
+### 4. Smart Cart & Demo Ordering
 - **Smart Cart** panel in the right sidebar: bundle suggestions, nudge messages, AI checkout tips
 - **One-click "Add bundle to cart"** for phone+plan and accessory bundles
-- **Checkout modal** with demo payment flow, bundle savings, and order confirmation
+- **Checkout modal** with allowlisted demo cards; raw card input remains browser-only
+- **Durable SQLite order flow** with immutable line-item snapshots, separate one-time/monthly totals, idempotency, and owner-scoped receipts
+- **Natural confirmation boundary** that recognizes only exact allowlisted phrases while one unexpired review is active
 - **Cart abandonment tracking** — leaving with items in cart triggers a recovery banner with 10% discount on return
+
+No real payment, charge, fulfillment, tax, fee, shipping, eligibility, inventory
+reservation, or email delivery is performed. Transactional email is deliberately
+deferred to the next approved increment.
 
 ### 5. AI Orchestrator (experimental)
 - **`GET /api/intelligence/profile`** — single AI call returns intent, recommendations, next actions, and smart cart together
@@ -121,7 +129,11 @@ Open http://localhost:5173
 | POST | `/api/customer/wishlist/toggle` | Add/remove wishlist item |
 | POST | `/api/customer/cart/add` | Add item to cart |
 | POST | `/api/customer/cart/add-bundle` | Add bundle products to cart |
-| POST | `/api/checkout/complete` | Complete checkout (demo payment) |
+| POST | `/api/chat/cart/confirm` | Confirm a durable add/remove proposal |
+| POST | `/api/checkout/reviews` | Create a trusted simulated-order review |
+| GET/DELETE | `/api/checkout/reviews/{review_id}` | Recover or cancel a review |
+| GET | `/api/orders/by-idempotency/{key}` | Resolve an uncertain placement result |
+| GET | `/api/orders/{order_id}` | Read an owner-scoped persisted receipt |
 | GET | `/api/checkout/abandonment-status` | Check cart abandonment / recovery offer |
 | POST | `/api/checkout/abandon` | Mark cart as abandoned |
 | GET | `/api/intelligence/profile` | **Unified AI orchestrator** (intent + recs + NBA + cart) |
@@ -160,6 +172,9 @@ curl -X POST http://localhost:8000/api/chat \
 - [x] Structured phone-and-plan shopping need
 - [x] Grounded shortlist and comparison
 - [x] Explicit cart proposal and confirmation
+- [x] Explicit cart removal proposal and confirmation
+- [x] Durable simulated order review, confirmation, idempotency, and receipt
+- [ ] Transactional order-confirmation email (separate approved phase)
 - [x] Accessible consumer light theme
 - [x] Personalized Discovery prototype
 - [x] Next Best Action prototype

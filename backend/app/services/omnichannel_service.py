@@ -25,7 +25,8 @@ def build_sync_message(session_id: str, current_channel: str) -> str:
     other = info.get("other_channel") or ""
     other_label = CHANNEL_LABELS.get(other, other)
     if cart:
-        return f"Synced from {other_label} — {len(cart)} item(s) in your cart"
+        item_label = "item" if len(cart) == 1 else "items"
+        return f"Synced from {other_label} — {len(cart)} {item_label} in your cart"
     viewed = session_store.get_viewed(session_id)
     if viewed:
         return f"Continuing from {other_label} — you viewed {viewed[0].name}"

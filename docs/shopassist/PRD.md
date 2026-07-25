@@ -56,7 +56,7 @@ A customer can:
 | SA-FR-11 | Cart mutation occurs only after an explicit UI confirmation. |
 | SA-FR-12 | Closing and reopening preserves the conversation, draft, need, and results. |
 | SA-FR-13 | Unrelated requests receive a commerce boundary response. |
-| SA-FR-14 | Billing, account, network, and service requests receive a Frag Magenta/support handoff. |
+| SA-FR-14 | Billing, account, network, and service requests receive a generic customer-support handoff. |
 | SA-FR-15 | No exact match is stated honestly; constraints are not silently relaxed. |
 | SA-FR-16 | The UI clearly labels the local catalog as synthetic demo data. |
 

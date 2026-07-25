@@ -39,6 +39,16 @@
   margin-bottom: 4px;
 }
 
+.checkout-step {
+  display: inline-flex;
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
 .checkout-subtitle {
   font-size: 0.82rem;
   color: var(--text-muted);
@@ -132,6 +142,39 @@
   color: var(--error);
   font-size: 0.8rem;
   margin-bottom: 8px;
+}
+
+.demo-card-options {
+  display: grid;
+  gap: 6px;
+  margin: -4px 0 12px;
+}
+
+.demo-card-options button,
+.checkout-secondary {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--primary);
+  font-size: 0.76rem;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.demo-payment-notice {
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  margin: 10px 0 14px;
+  padding: 10px;
+}
+
+.checkout-secondary {
+  margin-top: 8px;
+  text-align: center;
+  width: 100%;
 }
 
 .checkout-submit {

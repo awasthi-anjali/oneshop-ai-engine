@@ -44,8 +44,8 @@ export default function SmartCartPanel({
   return (
     <div className="smart-cart smart-cart-scroll">
       <div className="smart-cart-header">
-        <h3>Smart Cart {cartCount > 0 && `(${cartCount})`}</h3>
-        {aiPowered && <span className="smart-ai">AI</span>}
+        <h3>Your cart {cartCount > 0 && `(${cartCount})`}</h3>
+        {aiPowered && <span className="smart-ai">AI validated</span>}
       </div>
 
       {nudge && <p className="smart-nudge">{nudge}</p>}
@@ -77,8 +77,10 @@ export default function SmartCartPanel({
           </div>
 
           {crossSell.length > 0 && (
-            <div className="cross-sell-section">
-              <h4 className="cross-sell-heading">Compatible add-ons</h4>
+            <details className="cross-sell-section">
+              <summary className="cross-sell-heading">
+                Optional catalog items ({crossSell.length})
+              </summary>
               {crossSell.map((item) => (
                 <div key={item.product.id} className="cross-sell-row">
                   <div className="cross-sell-info">
@@ -97,15 +99,15 @@ export default function SmartCartPanel({
                   </div>
                 </div>
               ))}
-            </div>
+            </details>
           )}
 
           {bundles.map((bundle, i) => (
-            <div key={i} className="bundle-card bundle-card-highlight">
-              <div className="bundle-header">
-                <span className="bundle-name">📦 {bundle.name}</span>
-                <span className="bundle-save">Catalog compatible</span>
-              </div>
+            <details key={i} className="bundle-card bundle-card-highlight">
+              <summary className="bundle-header">
+                <span className="bundle-name">Suggested set: {bundle.name}</span>
+                <span className="bundle-save">Catalog items</span>
+              </summary>
               <p className="bundle-reason">{bundle.reason}</p>
               <div className="bundle-product-rows">
                 {bundle.products.map((p) => (
@@ -120,17 +122,17 @@ export default function SmartCartPanel({
               <div className="bundle-footer">
                 <div className="bundle-pricing">
                   <span className="bundle-total">{formatBundleTotal(bundle)}</span>
-                  <span className="bundle-savings-label">No offer assumed</span>
+                  <span className="bundle-savings-label">No discount assumed</span>
                 </div>
                 <button
                   type="button"
                   className="btn-add-bundle"
                   onClick={() => onAddBundle(bundle.product_ids)}
                 >
-                  Allow & add bundle
+                  Review & add set
                 </button>
               </div>
-            </div>
+            </details>
           ))}
 
           <div className="cart-totals">
@@ -153,7 +155,7 @@ export default function SmartCartPanel({
           </div>
 
           <button className="btn-checkout-main" onClick={onCheckout}>
-            Checkout
+            Start demo checkout
           </button>
         </>
       )}
