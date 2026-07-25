@@ -398,12 +398,12 @@ class ShopAssistService:
                 return self._response(
                     sid,
                     state,
-                    ChatStatus.CLARIFYING,
+                    ChatStatus.NO_MATCH,
                     "Your cart is empty. Add an item before starting demo checkout.",
                     [],
                     [],
                     mode,
-                    selected_tool="start_checkout",
+                    selected_tool="checkout",
                     cart_summary=summary,
                 )
             return self._response(
@@ -423,7 +423,7 @@ class ShopAssistService:
                     )
                 ],
                 mode,
-                selected_tool="start_checkout",
+                selected_tool="checkout",
                 cart_summary=summary,
                 open_checkout=True,
             )

@@ -112,7 +112,7 @@ def test_order_intent_opens_trusted_checkout_without_creating_order(client, mess
     data = chat(client, message, user_id, sid).json()
 
     assert data["status"] == "recommended"
-    assert data["selected_tool"] == "start_checkout"
+    assert data["selected_tool"] == "checkout"
     assert data["open_checkout"] is True
     assert data["cart_summary"]["total_items"] == 1
     assert data["order_receipt"] is None
@@ -124,8 +124,8 @@ def test_order_intent_with_empty_cart_does_not_open_checkout_or_create_order(cli
 
     data = chat(client, "place the order", user_id, session_id).json()
 
-    assert data["status"] == "clarifying"
-    assert data["selected_tool"] == "start_checkout"
+    assert data["status"] == "no_match"
+    assert data["selected_tool"] == "checkout"
     assert data["open_checkout"] is False
     assert data["cart_summary"]["total_items"] == 0
     assert data["order_receipt"] is None

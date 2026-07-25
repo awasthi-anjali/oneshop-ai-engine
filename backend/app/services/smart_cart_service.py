@@ -204,11 +204,19 @@ def _resolve_trigger_product(cart: list[Product], session_id: str) -> Product | 
     last_id = session_store.get_last_cart_add(session_id)
     if last_id:
         product = catalog.get_by_id(last_id)
-        if product and any(p.id == last_id for p in cart):
+        if (
+            product
+            and product.category == ProductCategory.PHONE
+            and any(p.id == last_id for p in cart)
+        ):
             return product
 
     for product in cart:
         if product.category == ProductCategory.PHONE:
+            return product
+    if last_id:
+        product = catalog.get_by_id(last_id)
+        if product and any(p.id == last_id for p in cart):
             return product
     return cart[0] if cart else None
 
