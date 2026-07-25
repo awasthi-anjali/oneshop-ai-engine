@@ -233,18 +233,18 @@ export default function ShopAssistDrawer({
     <aside
       className={`shopassist-drawer ${open ? 'open' : ''}`}
       aria-hidden={!open}
-      aria-label="ShopAssist purchase guide"
+      aria-label="Ava purchase guide"
     >
       <header className="shopassist-header">
         <div className="shopassist-title-row">
-          <h2>ShopAssist</h2>
+          <h2>Ava</h2>
           {mode && (
             <span className={`assist-mode ${mode}`}>
               {mode === 'ai' ? 'AI guided' : 'Catalog mode'}
             </span>
           )}
         </div>
-        <button className="assist-close" onClick={onClose} aria-label="Close ShopAssist">
+        <button className="assist-close" onClick={onClose} aria-label="Close Ava">
           ×
         </button>
       </header>
@@ -469,7 +469,7 @@ export default function ShopAssistDrawer({
         )}
 
         {supplementalActions.length > 0 && (
-          <div className="assist-actions" aria-label="ShopAssist actions">
+          <div className="assist-actions" aria-label="Ava actions">
             {supplementalActions.map((action) => (
               action.type === 'OPEN_CHECKOUT' ? (
                 <button
@@ -489,7 +489,7 @@ export default function ShopAssistDrawer({
           </div>
         )}
 
-        {loading && <div className="assist-loading" role="status">ShopAssist is checking the catalog…</div>}
+        {loading && <div className="assist-loading" role="status">Ava is checking the catalog…</div>}
         {error && (
           <div className="assist-error" role="alert">
             <span>{error}</span>
@@ -539,7 +539,7 @@ export default function ShopAssistDrawer({
             className="assist-send"
             onClick={() => onSend()}
             disabled={loading || listening || !draft.trim()}
-            aria-label="Send to ShopAssist"
+            aria-label="Send to Ava"
           >
             Send
           </button>

@@ -99,7 +99,7 @@ function baseProps(overrides: Partial<ComponentProps<typeof ShopAssistDrawer>> =
     contextProduct: null,
     recommendations,
     recommendationMode: 'request' as const,
-    recommendationHeading: 'ShopAssist recommends',
+    recommendationHeading: 'Ava recommends',
     comparison: [],
     actions: [],
     cartProposal: null,
@@ -170,7 +170,7 @@ describe('ShopAssistDrawer', () => {
 
     render(<ShopAssistDrawer {...baseProps({ onViewPicks })} />)
 
-    expect(screen.getByRole('heading', { name: 'ShopAssist recommends' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Ava recommends' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Best match: Google Pixel 8/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: /Plan: Unlimited Plus Plan/ })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('Catalog camera match.')).toBeInTheDocument()
@@ -278,12 +278,12 @@ describe('ShopAssistDrawer', () => {
         {...baseProps({
           messages: [{ role: 'user', content: 'Show me something cheaper' }],
           recommendationMode: 'request',
-          recommendationHeading: 'ShopAssist recommends',
+          recommendationHeading: 'Ava recommends',
           loading: true,
         })}
       />,
     )
-    expect(screen.queryByRole('heading', { name: 'ShopAssist recommends' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Ava recommends' })).not.toBeInTheDocument()
   })
 
   it('uses one compact header and hides demo or generic catalog context rows', () => {
@@ -299,9 +299,9 @@ describe('ShopAssistDrawer', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'ShopAssist' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Ava' })).toBeInTheDocument()
     expect(screen.getByText('Catalog mode')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Close ShopAssist' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Close Ava' })).toHaveLength(1)
     expect(screen.queryByText(/synthetic demo data/i)).not.toBeInTheDocument()
     expect(screen.queryByText('Context: catalog')).not.toBeInTheDocument()
 
@@ -345,8 +345,8 @@ describe('ShopAssistDrawer', () => {
     render(<Harness />)
     const input = screen.getByRole('textbox', { name: 'Describe what you need' })
     await user.type(input, 'keep this draft')
-    await user.click(screen.getByRole('button', { name: 'Close ShopAssist' }))
-    expect(screen.getByLabelText('ShopAssist purchase guide')).toHaveAttribute('aria-hidden', 'true')
+    await user.click(screen.getByRole('button', { name: 'Close Ava' }))
+    expect(screen.getByLabelText('Ava purchase guide')).toHaveAttribute('aria-hidden', 'true')
 
     await user.click(screen.getByRole('button', { name: 'Open guide' }))
     expect(screen.getByRole('textbox', { name: 'Describe what you need' })).toHaveValue('keep this draft')
@@ -376,7 +376,7 @@ describe('ShopAssistDrawer', () => {
 
   it('removes stale recommendation cards when a voice greeting response has no picks', () => {
     const { rerender } = render(<ShopAssistDrawer {...baseProps()} />)
-    expect(screen.getByRole('heading', { name: 'ShopAssist recommends' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Ava recommends' })).toBeInTheDocument()
 
     rerender(
       <ShopAssistDrawer
@@ -392,7 +392,7 @@ describe('ShopAssistDrawer', () => {
     )
 
     expect(screen.getByText('Hi! Tell me what you need in a phone or plan.')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'ShopAssist recommends' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Ava recommends' })).not.toBeInTheDocument()
   })
 
   it('sends on Enter, preserves a newline on Shift+Enter, and blocks loading duplicates', async () => {
@@ -409,7 +409,7 @@ describe('ShopAssistDrawer', () => {
     expect(onSend).toHaveBeenCalledTimes(1)
 
     rerender(<ShopAssistDrawer {...baseProps({ draft: 'ready', loading: true, onSend })} />)
-    expect(screen.getByRole('button', { name: 'Send to ShopAssist' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Send to Ava' })).toBeDisabled()
   })
 
   it('shows exact cadence and totals and submits only validated proposal IDs', async () => {

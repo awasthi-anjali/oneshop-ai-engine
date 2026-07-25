@@ -802,7 +802,7 @@ export async function sendMessage(
     throw new Error(
       typeof detail?.detail === 'string'
         ? detail.detail
-        : 'ShopAssist could not respond. Please try again.'
+        : 'Ava could not respond. Please try again.'
     )
   }
   const raw = (await res.json()) as WireV1ChatResponse | LegacyChatResponse

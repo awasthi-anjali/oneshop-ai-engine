@@ -610,7 +610,7 @@ export default function ShopPage({
         applyCheckoutProfileFromChat(personalizationUserId, response.checkout_profile)
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'ShopAssist could not respond.'
+      const message = error instanceof Error ? error.message : 'Ava could not respond.'
       setAssistError(message.replace(/port\s*8000/gi, 'service'))
     } finally {
       setAssistLoading(false)
@@ -656,7 +656,7 @@ export default function ShopPage({
   const handleConfirmProposal = async (proposalId: string) => {
     if (confirmationInFlight.current || confirming || confirmed || !sessionId) return
     if (!assistCartProposal || assistCartProposal.proposal_id !== proposalId) {
-      setAssistError('This proposal is no longer valid. Please ask ShopAssist to refresh it.')
+      setAssistError('This proposal is no longer valid. Please ask Ava to refresh it.')
       return
     }
     confirmationInFlight.current = true
@@ -961,13 +961,13 @@ export default function ShopPage({
                 {showFullCatalog ? 'Unranked catalog' : catalogMode === 'picks' ? 'Explicit assistant result' : 'Personalized discovery'}
               </span>
               <h2>
-                {showFullCatalog ? 'Browse full catalog' : catalogMode === 'picks' ? 'ShopAssist Picks' : suggestedHeading}
+                {showFullCatalog ? 'Browse full catalog' : catalogMode === 'picks' ? 'Ava Picks' : suggestedHeading}
               </h2>
               <p>
                 {showFullCatalog
                   ? 'All synthetic demo products in catalog order.'
                   : catalogMode === 'picks'
-                    ? 'Exact products returned for your latest ShopAssist request.'
+                    ? 'Exact products returned for your latest Ava request.'
                     : 'Ranked for this profile; switch the category tabs to narrow the feed.'}
               </p>
             </div>
@@ -1053,7 +1053,7 @@ export default function ShopPage({
                       )
                     }
                   >
-                    Ask ShopAssist about these results
+                    Ask Ava about these results
                   </button>
                 )}
               </div>
@@ -1077,7 +1077,7 @@ export default function ShopPage({
                       setShowFullCatalog(false)
                     }}
                   >
-                    ShopAssist Picks ({assistRecommendations.length})
+                    Ava Picks ({assistRecommendations.length})
                   </button>
                 )}
                 <button
@@ -1096,7 +1096,7 @@ export default function ShopPage({
           {showEmptySearch ? (
             <div className="shop-empty-search">
               <p>No products found for &ldquo;{searchQuery.trim()}&rdquo;</p>
-              <span>Try a different keyword, switch category, or ask ShopAssist for help.</span>
+              <span>Try a different keyword, switch category, or ask Ava for help.</span>
               <div className="shop-empty-search-actions">
                 <button type="button" className="shop-empty-clear" onClick={() => setSearchQuery('')}>
                   Clear search
@@ -1116,7 +1116,7 @@ export default function ShopPage({
                     )
                   }
                 >
-                  Ask ShopAssist
+                  Ask Ava
                 </button>
               </div>
             </div>
@@ -1249,7 +1249,7 @@ export default function ShopPage({
         recommendationHeading={
           drawerRecommendationMode === 'profile'
             ? `Recommended for ${activeDemoProfile.name}`
-            : 'ShopAssist recommends'
+            : 'Ava recommends'
         }
         comparison={comparison}
         actions={assistActions}

@@ -10,7 +10,7 @@ export default function ShopAssistFab({ hidden, onOpen }: Props) {
     <button
       type="button"
       className="shopassist-fab"
-      aria-label="Open ShopAssist"
+      aria-label="Open Ava"
       onClick={(event) => onOpen(event.currentTarget)}
     >
       <svg
@@ -28,7 +28,7 @@ export default function ShopAssistFab({ hidden, onOpen }: Props) {
         <circle cx="12" cy="11" r="1.25" fill="var(--primary)" />
         <circle cx="16" cy="11" r="1.25" fill="var(--primary)" />
       </svg>
-      <span className="shopassist-fab-tooltip" role="tooltip">ShopAssist</span>
+      <span className="shopassist-fab-tooltip" role="tooltip">Ava</span>
     </button>
   )
 }

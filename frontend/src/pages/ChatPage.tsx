@@ -7,7 +7,7 @@ import '../App.css'
 const WELCOME: ChatMessage = {
   role: 'assistant',
   content:
-    "Hi! I'm **ShopAssist**, your AI shopping assistant. I can search, compare, **add to cart**, and **start checkout** for you.\n\nTry:\n- \"Show me phones under $500\"\n- \"Compare iPhone 15 Pro vs Samsung S24 Ultra\"\n- \"Add the iPhone 15 Pro and unlimited plan to my cart\"\n- \"I'm ready to checkout\"",
+    "Hi! I'm **Ava**, your AI shopping assistant. I can search, compare, **add to cart**, and **start checkout** for you.\n\nTry:\n- \"Show me phones under $500\"\n- \"Compare iPhone 15 Pro vs Samsung S24 Ultra\"\n- \"Add the iPhone 15 Pro and unlimited plan to my cart\"\n- \"I'm ready to checkout\"",
 }
 
 const STARTERS = [

@@ -692,14 +692,14 @@ class ShopAssistService:
             state.turns.append({"role": "user", "content": text})
             return self._response(
                 sid, state, ChatStatus.RECOMMENDED,
-                "I'm Ava, OneShop's ShopAssist shopping assistant. I can search the trusted phone and plan catalog, explain trade-offs, compare options, prepare an exact cart proposal for your approval, and help you review your cart or checkout.",
+                "I'm Ava, OneShop's shopping assistant. I can search the trusted phone and plan catalog, explain trade-offs, compare options, prepare an exact cart proposal for your approval, and help you review your cart or checkout.",
                 [], [], ChatMode.FALLBACK,
             )
         if self._is_identity_question(normalized):
             state.turns.append({"role": "user", "content": text})
             return self._response(
                 sid, state, ChatStatus.RECOMMENDED,
-                "My name is Ava. I'm OneShop's ShopAssist shopping assistant, and I can help you find and compare trusted catalog options, then prepare a cart proposal for you to confirm.",
+                "My name is Ava. I'm OneShop's shopping assistant, and I can help you find and compare trusted catalog options, then prepare a cart proposal for you to confirm.",
                 [], [], ChatMode.FALLBACK,
             )
         if self._is_explanation_question(normalized):
@@ -753,7 +753,7 @@ class ShopAssistService:
             return True
         tokens = normalized.split()
         salutations = {"hi", "hiya", "hello", "hey", "hay"}
-        greeting_only_words = salutations | {"there", "shopassist", "assistant"}
+        greeting_only_words = salutations | {"there", "ava", "shopassist", "assistant"}
         return (
             1 <= len(tokens) <= 3
             and any(token in salutations for token in tokens)
