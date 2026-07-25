@@ -89,6 +89,8 @@ class _State:
     total_user_turns: int = 0
     pending_cart_operation: Literal["add", "remove"] | None = None
     pending_cart_turn: int = 0
+    last_outcome: dict[str, Any] = field(default_factory=dict)
+    last_no_match: dict[str, Any] = field(default_factory=dict)
 
 
 class _ComposedResponse(BaseModel):
@@ -230,13 +232,19 @@ class ShopAssistService:
             else ""
         )
         totals = " and ".join(value for value in (once, monthly) if value)
+        email_note = (
+            " The transactional confirmation email was sent."
+            if receipt.email_status == "sent"
+            else " The order is saved; confirmation email delivery is pending retry."
+        )
         return self._response(
             sid,
             state,
             ChatStatus.RECOMMENDED,
             (
                 f"Demo order {receipt.order_id} is saved for {totals}. "
-                "No real payment was processed and no email has been sent."
+                "No real payment was processed and no charge occurred."
+                + email_note
             ),
             [],
             [],
@@ -390,12 +398,12 @@ class ShopAssistService:
                 return self._response(
                     sid,
                     state,
-                    ChatStatus.CLARIFYING,
+                    ChatStatus.NO_MATCH,
                     "Your cart is empty. Add an item before starting demo checkout.",
                     [],
                     [],
                     mode,
-                    selected_tool="start_checkout",
+                    selected_tool="checkout",
                     cart_summary=summary,
                 )
             return self._response(
@@ -403,14 +411,19 @@ class ShopAssistService:
                 state,
                 ChatStatus.RECOMMENDED,
                 (
-                    f"{self._cart_summary_message(summary)} "
+                    f"{self._cart_summary_message(summary)} Opening checkout. "
                     "I’ll open demo checkout for your contact details and demo card. "
                     "You will review the exact order before confirming it in chat."
                 ),
                 [],
-                [],
+                [
+                    ShopAssistAction(
+                        type=ShopAssistActionType.OPEN_CHECKOUT,
+                        label="Open demo checkout",
+                    )
+                ],
                 mode,
-                selected_tool="start_checkout",
+                selected_tool="checkout",
                 cart_summary=summary,
                 open_checkout=True,
             )
@@ -649,7 +662,20 @@ class ShopAssistService:
 
         if set(session_store.get_cart_ids(sid)) != before_cart:
             raise RuntimeError("ShopAssist chat attempted to mutate cart")
+        self._record_outcome(state, response)
         return response
+
+    @staticmethod
+    def _record_outcome(state: _State, response: ChatResponse) -> None:
+        state.last_outcome = {
+            "status": response.status.value,
+            "categories": list(response.need_profile.categories),
+            "device_budget_max": response.need_profile.device_budget_max,
+            "monthly_budget_max": response.need_profile.monthly_budget_max,
+            "recommendation_ids": [item.product.id for item in response.recommendations],
+        }
+        if response.status == ChatStatus.NO_MATCH:
+            state.last_no_match = dict(state.last_outcome)
 
     def _intent(self, text: str) -> str:
         if is_prompt_injection_or_off_topic(text):
@@ -760,7 +786,10 @@ class ShopAssistService:
             re.search(
                 r"\b(?:checkout|check out)\b"
                 r"|\b(?:place|confirm|complete|submit)\s+(?:the\s+|my\s+)?order\b"
-                r"|\b(?:ready|want|like)\s+to\s+(?:checkout|check out|order)\b",
+                r"|\b(?:ready|want|like)\s+to\s+(?:checkout|check out|order|pay)\b"
+                r"|\bproceed\s+to\s+payment\b"
+                r"|\bfinalize\s+(?:the\s+|my\s+)?order\b"
+                r"|\bready\s+to\s+pay\s+for\s+(?:the\s+|my\s+)?cart\b",
                 normalized,
             )
         )
@@ -1127,6 +1156,50 @@ class ShopAssistService:
     ) -> ChatResponse | None:
         normalized = re.sub(r"[^a-z\s]", "", lowered).strip()
         normalized = " ".join(normalized.split())
+        if self._is_identity_question(normalized):
+            state.turns.append({"role": "user", "content": text})
+            state.turns = state.turns[-12:]
+            return self._response(
+                sid,
+                state,
+                ChatStatus.RECOMMENDED,
+                (
+                    "I'm Ava, OneShop's shopping assistant. I can help you explore and "
+                    "compare products, review your cart, and guide you through a confirmed "
+                    "demo order."
+                ),
+                [],
+                [],
+                ChatMode.FALLBACK,
+            )
+        if self._is_explanation_question(normalized):
+            state.turns.append({"role": "user", "content": text})
+            state.turns = state.turns[-12:]
+            return self._response(
+                sid,
+                state,
+                ChatStatus.RECOMMENDED,
+                self._outcome_explanation(state.last_no_match or state.last_outcome),
+                [],
+                [],
+                ChatMode.FALLBACK,
+            )
+        if self._is_capabilities_question(normalized):
+            state.turns.append({"role": "user", "content": text})
+            state.turns = state.turns[-12:]
+            return self._response(
+                sid,
+                state,
+                ChatStatus.RECOMMENDED,
+                (
+                    "I'm Ava. I can explore and compare OneShop products, review your cart, "
+                    "prepare confirmed add or remove changes, and guide you through demo "
+                    "checkout. I only change the cart or create an order after you confirm."
+                ),
+                [],
+                [],
+                ChatMode.FALLBACK,
+            )
         if self._is_greeting_only(normalized):
             state.turns.append({"role": "user", "content": text})
             state.turns = state.turns[-12:]
@@ -1137,29 +1210,6 @@ class ShopAssistService:
                 "Hi! Tell me what you need in a phone or plan, including any budget or must-have.",
                 [],
                 [ShopAssistAction(type=ShopAssistActionType.REFINE, label="Describe what you need")],
-                ChatMode.FALLBACK,
-            )
-        if normalized in {
-            "what can you do",
-            "what do you do",
-            "how can you help",
-            "what can you help with",
-            "help",
-        }:
-            state.turns.append({"role": "user", "content": text})
-            state.turns = state.turns[-12:]
-            return self._response(
-                sid,
-                state,
-                ChatStatus.RECOMMENDED,
-                (
-                    "I can explore and compare OneShop products, answer catalog questions, "
-                    "review your cart, prepare confirmed add or remove changes, and guide you "
-                    "through demo checkout. I only change the cart or create a demo order after "
-                    "you explicitly confirm the exact review."
-                ),
-                [],
-                [],
                 ChatMode.FALLBACK,
             )
         if normalized in {
@@ -1179,12 +1229,44 @@ class ShopAssistService:
         return None
 
     @staticmethod
+    def _is_identity_question(text: str) -> bool:
+        return bool(re.search(
+            r"\b(?:who\s+(?:are|r)\s+(?:you|u)|what\s+(?:are|r)\s+(?:you|u)|"
+            r"what(?:s| is)\s+(?:your|ur)\s+name|(?:your|ur)\s+name)\b",
+            text,
+        ))
+
+    @staticmethod
+    def _is_capabilities_question(text: str) -> bool:
+        return bool(re.search(
+            r"\b(?:what can (?:you|u) (?:do|help with|offer)|how can (?:you|u) help|"
+            r"what do (?:you|u) (?:do|offer)|help(?:\s+me)?|what (?:are|r) your capabilities)\b",
+            text,
+        ))
+
+    @staticmethod
+    def _is_explanation_question(text: str) -> bool:
+        return bool(re.search(r"\b(?:why did you say|why .*no phone|explain (?:that|the result))\b", text))
+
+    @staticmethod
+    def _outcome_explanation(outcome: dict[str, Any]) -> str:
+        if outcome.get("status") == ChatStatus.NO_MATCH.value and outcome.get("categories") == ["phone"]:
+            budget = outcome.get("device_budget_max")
+            suffix = f" at or below ${budget:.0f}" if budget is not None else ""
+            return (
+                f"There was no in-stock phone{suffix} in the trusted catalog, and I did not "
+                "relax that constraint. A plan is a different category with a recurring monthly "
+                "price, not a phone's one-time price."
+            )
+        return "I can explain the most recent trusted catalog result after a shopping search."
+
+    @staticmethod
     def _is_greeting_only(normalized: str) -> bool:
         if normalized in {"good morning", "good afternoon", "good evening"}:
             return True
         tokens = normalized.split()
         salutations = {"hi", "hiya", "hello", "hey", "hay", "sup"}
-        greeting_only_words = salutations | {"there", "shopassist", "assistant", "whats", "up"}
+        greeting_only_words = salutations | {"there", "ava", "shopassist", "assistant", "whats", "up"}
         return (
             1 <= len(tokens) <= 3
             and any(token in salutations for token in tokens)
@@ -2302,13 +2384,10 @@ class ShopAssistService:
         )
 
     def _is_discount_query(self, text: str) -> bool:
-        return any(
-            word in text
-            for word in (
-                "discount", "deal", "coupon", "sale", "cashback", "cash back",
-                "promotion", "promo", "offer", "rebate",
-            )
-        )
+        return any(word in text for word in (
+            "discount", "deal", "coupon", "sale", "cashback", "cash back",
+            "promotion", "promo", "rebate",
+        )) or bool(re.search(r"\b(?:special|promotional) offers?\b", text))
 
     def _discount_message(
         self,

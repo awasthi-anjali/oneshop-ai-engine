@@ -22,6 +22,7 @@ from app.models.schemas import (
     Product,
 )
 from app.services.product_catalog import catalog
+from app.services.receipt_email_service import deliver_persisted_order_email
 
 
 PROPOSAL_TTL_MINUTES = 15
@@ -214,6 +215,16 @@ class CommerceStore:
                     order_id TEXT NOT NULL,
                     event_type TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS commerce_email_outbox (
+                    order_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    provider TEXT,
+                    last_error TEXT,
+                    sent_at TEXT,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (order_id) REFERENCES commerce_orders(order_id)
                 );
                 """
             )
@@ -690,6 +701,7 @@ class CommerceStore:
                         raise ValueError("Idempotency key was already used for another checkout review.")
                     receipt = self._order_receipt_locked(str(replay["order_id"]))
                     self._conn.execute("COMMIT")
+                    receipt = self._deliver_order_email(receipt.order_id)
                     return receipt.model_copy(update={"idempotent_replay": True})
                 if not settings.ordering_enabled or not settings.demo_payment_enabled:
                     raise ValueError("Demo ordering is disabled.")
@@ -719,6 +731,7 @@ class CommerceStore:
                         (session_id, idempotency_key, receipt.order_id, utc_now().isoformat()),
                     )
                     self._conn.execute("COMMIT")
+                    receipt = self._deliver_order_email(receipt.order_id)
                     return receipt.model_copy(update={"idempotent_replay": True})
                 if str(row["status"]) != "awaiting_confirmation":
                     raise ValueError("Checkout review is no longer active.")
@@ -788,6 +801,13 @@ class CommerceStore:
                 )
                 self._conn.execute(
                     """
+                    INSERT INTO commerce_email_outbox(order_id, status, attempts, updated_at)
+                    VALUES (?, 'pending', 0, ?)
+                    """,
+                    (order_id, created_at),
+                )
+                self._conn.execute(
+                    """
                     UPDATE commerce_checkout_reviews
                     SET status = 'consumed', consumed_order_id = ?
                     WHERE review_id = ?
@@ -801,7 +821,7 @@ class CommerceStore:
                 self._touch_cart_locked(session_id)
                 receipt = self._order_receipt_locked(order_id)
                 self._conn.execute("COMMIT")
-                return receipt
+                return self._deliver_order_email(receipt.order_id)
             except Exception:
                 self._conn.execute("ROLLBACK")
                 raise
@@ -820,6 +840,10 @@ class CommerceStore:
             """,
             (order_id,),
         ).fetchall()
+        email_row = self._conn.execute(
+            "SELECT status, attempts, provider FROM commerce_email_outbox WHERE order_id = ?",
+            (order_id,),
+        ).fetchone()
         return OrderReceipt(
             order_id=str(order["order_id"]),
             session_id=str(order["session_id"]),
@@ -831,7 +855,50 @@ class CommerceStore:
             one_time_total_minor=int(order["one_time_total_minor"]),
             monthly_total_minor=int(order["monthly_total_minor"]),
             created_at=str(order["created_at"]),
+            email_status=str(email_row["status"]) if email_row else "pending",
+            email_attempts=int(email_row["attempts"]) if email_row else 0,
+            email_provider=str(email_row["provider"]) if email_row and email_row["provider"] else None,
         )
+
+    def _deliver_order_email(self, order_id: str) -> OrderReceipt:
+        """Claim one outbox attempt and deliver only from the persisted receipt."""
+        row = self._conn.execute(
+            "SELECT status FROM commerce_email_outbox WHERE order_id = ?",
+            (order_id,),
+        ).fetchone()
+        if not row or str(row["status"]) in {"sent", "sending"}:
+            return self._order_receipt_locked(order_id)
+        now = utc_now().isoformat()
+        claimed = self._conn.execute(
+            """
+            UPDATE commerce_email_outbox
+            SET status = 'sending', attempts = attempts + 1, updated_at = ?
+            WHERE order_id = ? AND status IN ('pending', 'failed')
+            """,
+            (now, order_id),
+        )
+        if claimed.rowcount != 1:
+            return self._order_receipt_locked(order_id)
+        receipt = self._order_receipt_locked(order_id)
+        try:
+            result = deliver_persisted_order_email(receipt)
+            delivered = bool(result["delivered"])
+            status = "sent" if delivered else "failed"
+            provider = str(result.get("provider") or "outbox_only")
+            error = None if delivered else str(result.get("error") or "provider_not_configured")
+        except Exception as exc:
+            status = "failed"
+            provider = None
+            error = type(exc).__name__
+        self._conn.execute(
+            """
+            UPDATE commerce_email_outbox
+            SET status = ?, provider = ?, last_error = ?, sent_at = ?, updated_at = ?
+            WHERE order_id = ?
+            """,
+            (status, provider, error, now if status == "sent" else None, now, order_id),
+        )
+        return self._order_receipt_locked(order_id)
 
     def get_order(self, order_id: str, session_id: str, user_id: str | None) -> OrderReceipt:
         with self._lock:

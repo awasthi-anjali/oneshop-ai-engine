@@ -54,6 +54,7 @@ export type ChatActionType =
   | 'PROPOSE_ADD_TO_CART'
   | 'PROPOSE_ADD_BUNDLE'
   | 'PROPOSE_REMOVE_FROM_CART'
+  | 'OPEN_CHECKOUT'
   | 'HANDOFF_SERVICE'
 
 export interface ChatAction {
@@ -897,7 +898,7 @@ export async function sendMessage(
   })
   if (!res.ok) {
     const detail = await res.json().catch(() => null)
-    throw new Error(apiErrorMessage(detail, 'ShopAssist could not respond. Please try again.'))
+    throw new Error(apiErrorMessage(detail, 'Ava could not respond. Please try again.'))
   }
   const raw = (await res.json()) as WireV1ChatResponse | LegacyChatResponse
   if ('status' in raw) {

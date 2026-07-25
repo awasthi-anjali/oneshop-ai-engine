@@ -453,9 +453,9 @@ def test_capabilities_identity_and_explanation_do_not_replay_stale_phone_search(
 @pytest.mark.parametrize(
     ("message", "expected"),
     [
-        ("who r u?", "My name is Ava"),
-        ("who r u", "My name is Ava"),
-        ("what's ur name", "My name is Ava"),
+        ("who r u?", "I'm Ava"),
+        ("who r u", "I'm Ava"),
+        ("what's ur name", "I'm Ava"),
         ("what can u do?", "I'm Ava"),
         ("help me", "I'm Ava"),
     ],
@@ -467,6 +467,25 @@ def test_common_conversational_shorthand_is_state_safe(client, message, expected
     assert response["recommendations"] == []
     assert response["actions"] == []
     assert expected in response["message"]
+
+
+@pytest.mark.parametrize("message", ["who r u", "who are you"])
+def test_identity_release_regression_preempts_service_and_preserves_need(client, message):
+    shopping = post(client, "Android camera phone under $700").json()
+    sid = shopping["session_id"]
+    need_before = shopping["need_profile"]
+
+    identity = post(client, message, sid).json()
+
+    assert identity["status"] == "recommended"
+    assert identity["message"].startswith("I'm Ava")
+    assert identity["need_profile"] == need_before
+    assert identity["recommendations"] == []
+    assert identity["comparison"] is None
+    assert identity["actions"] == []
+    assert identity["cart_proposal"] is None
+    assert identity["selected_tool"] is None
+    assert all(action["type"] != "HANDOFF_SERVICE" for action in identity["actions"])
 
 
 @pytest.mark.parametrize(

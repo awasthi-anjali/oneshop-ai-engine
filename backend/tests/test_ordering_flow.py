@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.models.schemas import CheckoutReviewRequest
 from app.services.commerce_store import CommerceStore, commerce_store
 from app.services.product_catalog import catalog
 from app.services.session_store import session_store
@@ -16,6 +17,10 @@ from app.services.shopassist_service import shopassist
 @pytest.fixture(autouse=True)
 def deterministic_mode(monkeypatch):
     monkeypatch.setattr(shopassist, "_client", None)
+    monkeypatch.setattr(
+        "app.services.commerce_store.deliver_persisted_order_email",
+        lambda _receipt: {"delivered": True, "provider": "test", "error": None},
+    )
 
 
 @pytest.fixture
@@ -255,6 +260,62 @@ def test_concurrent_confirmation_keys_create_one_order(client):
         receipts = list(pool.map(place, ["concurrent-order-a", "concurrent-order-b"]))
     assert len({receipt.order_id for receipt in receipts}) == 1
     assert session_store.get_cart_ids(sid) == []
+
+
+def test_email_outbox_retries_failure_once_and_never_duplicates(monkeypatch, tmp_path):
+    attempts = []
+
+    def deliver(receipt):
+        attempts.append(receipt.model_copy(deep=True))
+        if len(attempts) == 1:
+            return {"delivered": False, "provider": "test", "error": "provider_failed"}
+        return {"delivered": True, "provider": "test", "error": None}
+
+    monkeypatch.setattr("app.services.commerce_store.deliver_persisted_order_email", deliver)
+    store = CommerceStore(tmp_path / "email-outbox.sqlite3")
+    try:
+        store.add_items("email-session", ["google-pixel-8"])
+        created = store.create_review(CheckoutReviewRequest(
+            session_id="email-session",
+            user_id="email-user",
+            customer_name="Demo Customer",
+            email="demo@example.com",
+            demo_payment_method="demo_card_success",
+        ))
+        first = store.place_order(
+            created.review_id,
+            created.confirmation_token or "",
+            "email-order-key",
+            "email-session",
+            "email-user",
+        )
+        assert first.email_status == "failed"
+        assert first.email_attempts == 1
+
+        retried = store.place_order(
+            created.review_id,
+            created.confirmation_token or "",
+            "email-order-key",
+            "email-session",
+            "email-user",
+        )
+        assert retried.email_status == "sent"
+        assert retried.email_attempts == 2
+        assert len(attempts) == 2
+        assert attempts[0].items == attempts[1].items
+
+        duplicate = store.place_order(
+            created.review_id,
+            created.confirmation_token or "",
+            "email-order-key",
+            "email-session",
+            "email-user",
+        )
+        assert duplicate.email_status == "sent"
+        assert duplicate.email_attempts == 2
+        assert len(attempts) == 2
+    finally:
+        store.close()
 
 
 def test_cart_proposal_and_idempotency_survive_store_restart(tmp_path):

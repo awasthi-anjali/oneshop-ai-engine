@@ -179,4 +179,29 @@ describe('ShopAssist cart tool API', () => {
     expect(body).not.toHaveProperty('total')
     expect(body).not.toHaveProperty('card_number')
   })
+
+  it.each(['who r u', 'who are you'])('keeps identity turn %s conversational and action-free', async (message) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...baseResponse,
+        message: "I'm Ava, OneShop's shopping assistant.",
+        recommendations: [],
+        actions: [],
+        selected_tool: null,
+        cart_proposal: null,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await sendMessage(message, 'identity-session', undefined, 'oneshop', 'user_001')
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+
+    expect(requestBody.message).toBe(message)
+    expect(response.status).toBe('recommended')
+    expect(response.message).toContain("I'm Ava")
+    expect(response.recommendations).toEqual([])
+    expect(response.actions).toEqual([])
+    expect(response.status).not.toBe('no_match')
+  })
 })

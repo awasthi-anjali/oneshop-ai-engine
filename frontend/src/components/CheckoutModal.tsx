@@ -95,7 +95,7 @@ export default function CheckoutModal({
           <span className="checkout-step">Final trusted review</span>
           <h2 id="checkout-review-title">Review your demo order</h2>
           <p className="checkout-subtitle">
-            Nothing is ordered until you continue to ShopAssist and explicitly confirm.
+            Nothing is ordered until you continue to Ava and explicitly confirm.
           </p>
           <div className="checkout-items">
             {review.items.map((item) => (
@@ -133,7 +133,7 @@ export default function CheckoutModal({
             className="checkout-submit"
             onClick={() => onReview(review)}
           >
-            Continue in ShopAssist to confirm
+            Continue in Ava to confirm
           </button>
           <button type="button" className="checkout-secondary" onClick={onClose}>
             Edit cart

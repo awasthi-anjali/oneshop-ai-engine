@@ -1,8 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from app.models.schemas import CheckoutProfile, CheckoutProfileUpdate, RecommendationInteractionRequest
+from app.models.schemas import RecommendationInteractionRequest
 from app.services.behavioral_memory import behavioral_memory_store, bounded_memory_context
-from app.services.checkout_profile_store import demo_profiles_with_checkout, get_checkout_profile, update_checkout_profile
 from app.services.interaction_store import DEMO_PROFILES, interaction_store
 from app.services.personalized_recommendation import (
     get_personalized_recommendations,
@@ -16,20 +15,7 @@ router = APIRouter(prefix="/api/recommendations", tags=["personalized-recommenda
 
 @router.get("/demo-profiles")
 async def demo_profiles() -> dict:
-    return {"profiles": demo_profiles_with_checkout(DEMO_PROFILES)}
-
-
-@router.get("/{user_id}/checkout-profile", response_model=CheckoutProfile)
-async def read_checkout_profile(user_id: str) -> CheckoutProfile:
-    return CheckoutProfile(**get_checkout_profile(user_id))
-
-
-@router.patch("/{user_id}/checkout-profile", response_model=CheckoutProfile)
-async def patch_checkout_profile(user_id: str, request: CheckoutProfileUpdate) -> CheckoutProfile:
-    patch = request.model_dump(exclude_none=True)
-    if not patch:
-        return CheckoutProfile(**get_checkout_profile(user_id))
-    return CheckoutProfile(**update_checkout_profile(user_id, patch))
+    return {"profiles": DEMO_PROFILES}
 
 
 @router.get("/{user_id}/memory")

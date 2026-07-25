@@ -180,6 +180,7 @@ class ShopAssistActionType(str, Enum):
     PROPOSE_ADD_TO_CART = "PROPOSE_ADD_TO_CART"
     PROPOSE_ADD_BUNDLE = "PROPOSE_ADD_BUNDLE"
     PROPOSE_REMOVE_FROM_CART = "PROPOSE_REMOVE_FROM_CART"
+    OPEN_CHECKOUT = "OPEN_CHECKOUT"
     HANDOFF_SERVICE = "HANDOFF_SERVICE"
 
 
@@ -356,6 +357,9 @@ class OrderReceipt(BaseModel):
     monthly_total_minor: int
     created_at: str
     idempotent_replay: bool = False
+    email_status: str = "pending"
+    email_attempts: int = 0
+    email_provider: str | None = None
 
 
 class ProductSearchRequest(BaseModel):

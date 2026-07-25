@@ -18,14 +18,12 @@ from urllib.parse import quote
 import httpx
 
 from app.config import settings
-from app.models.schemas import Product, ProductCategory
+from app.models.schemas import OrderReceipt, Product, ProductCategory
 
 logger = logging.getLogger(__name__)
 
 EVA_NAME = "Ava"
-# Keep the display name aligned with ShopAssist.  The mailbox is configured
-# independently from secrets; this value is only the sender address.
-EVA_EMAIL = "ava@gmail.com"
+EVA_EMAIL = settings.ava_gmail_address or "no-reply@oneshop.demo"
 EVA_FROM = f"{EVA_NAME} <{EVA_EMAIL}>"
 
 RECEIPTS_DIR = Path(__file__).resolve().parent.parent / "data" / "receipts"
@@ -86,6 +84,39 @@ def _resolve_receipt_session(order_id: str) -> str | None:
 def _format_money(amount: float, monthly: bool = False) -> str:
     suffix = "/month" if monthly else ""
     return f"${amount:,.2f}{suffix}"
+
+
+def render_persisted_order_email(receipt: OrderReceipt) -> str:
+    """Render only the durable order snapshot; never accepts request/cart facts."""
+    rows = []
+    for item in receipt.items:
+        monthly = item.billing_period == "monthly"
+        rows.append(
+            "<tr>"
+            f"<td>{escape(item.name)}</td>"
+            f"<td style=\"text-align:right\">{_format_money(item.unit_amount_minor / 100, monthly)}</td>"
+            "</tr>"
+        )
+    totals = []
+    if receipt.one_time_total_minor:
+        totals.append(f"Due once: {_format_money(receipt.one_time_total_minor / 100)}")
+    if receipt.monthly_total_minor:
+        totals.append(f"Monthly service: {_format_money(receipt.monthly_total_minor / 100, True)}")
+    return f"""<!doctype html>
+<html lang="en"><body style="font-family:Arial,sans-serif;color:#111827">
+<h1>OneShop demo order confirmed</h1>
+<p>Hi {escape(receipt.customer_name)}, Ava saved demo order <strong>{escape(receipt.order_id)}</strong>.</p>
+<table style="width:100%;border-collapse:collapse">{''.join(rows)}</table>
+<p>{escape(' · '.join(totals))}</p>
+<p>Demo card ending {escape(receipt.payment_last4)}. No payment was processed and no charge occurred.</p>
+<p>This is a transactional demo-order confirmation only.</p>
+</body></html>"""
+
+
+def deliver_persisted_order_email(receipt: OrderReceipt) -> dict[str, str | bool | None]:
+    html = render_persisted_order_email(receipt)
+    delivered, provider, error = _send_to_inbox(receipt.email, receipt.order_id, html)
+    return {"delivered": delivered, "provider": provider, "error": error}
 
 
 def render_receipt_html(
@@ -191,7 +222,7 @@ def render_receipt_html(
 
 
 def _send_via_eva_gmail(to_email: str, subject: str, html: str) -> bool:
-    if not settings.eva_gmail_enabled:
+    if not settings.ava_gmail_enabled:
         return False
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
@@ -203,7 +234,7 @@ def _send_via_eva_gmail(to_email: str, subject: str, html: str) -> bool:
     try:
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
             server.starttls()
-            server.login(EVA_EMAIL, settings.eva_gmail_app_password)
+            server.login(settings.ava_gmail_address, settings.ava_gmail_app_password)
             server.sendmail(EVA_EMAIL, [to_email], message.as_string())
         logger.info("Ava Gmail delivered receipt to %s", mask_email(to_email))
         return True

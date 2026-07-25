@@ -11,7 +11,7 @@ export default function ProfileSwitcher({ userId, onChange }: Props) {
     <section className="profile-switcher" aria-label="Demo personalization profile">
       <div>
         <span className="profile-switcher-label">Demo profile</span>
-        <strong>{selected.emoji} {selected.full_name}</strong>
+        <strong>{selected.emoji} {selected.name}</strong>
         <small>{selected.description} · shared across Web + Mobile</small>
       </div>
       <label>
