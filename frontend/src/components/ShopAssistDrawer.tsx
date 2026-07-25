@@ -520,7 +520,8 @@ export default function ShopAssistDrawer({
               )}
             </div>
             <p>
-              Demo card ending {checkoutReview.payment_last4}. No payment occurs and no email is sent.
+              Demo card ending {checkoutReview.payment_last4}. No payment occurs. A transactional
+              email is sent only after you confirm and the demo order is saved.
             </p>
             <p>
               Type <strong>yes</strong>, <strong>confirm</strong>, <strong>place order</strong>,
@@ -535,7 +536,12 @@ export default function ShopAssistDrawer({
             <span className="proposal-eyebrow">Demo order saved</span>
             <h3>{orderReceipt.order_id}</h3>
             <p role="status">
-              No real payment was processed. Transactional email is not enabled in this increment.
+              No real payment was processed.{' '}
+              {orderReceipt.email_status === 'sent'
+                ? 'Transactional confirmation email sent.'
+                : orderReceipt.email_status === 'failed'
+                  ? 'The order is saved; transactional email delivery failed and is queued for retry.'
+                  : 'The order is saved; transactional email delivery is pending.'}
             </p>
             <div className="proposal-totals">
               {orderReceipt.one_time_total_minor > 0 && (

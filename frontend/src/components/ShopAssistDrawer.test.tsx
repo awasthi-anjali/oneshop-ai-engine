@@ -176,6 +176,9 @@ const orderReceipt: OrderReceipt = {
   monthly_total_minor: 8500,
   created_at: '2026-07-25T00:00:00Z',
   idempotent_replay: false,
+  email_status: 'sent',
+  email_attempts: 1,
+  email_provider: 'resend',
 }
 
 class MockSpeechRecognition {
@@ -541,7 +544,7 @@ describe('ShopAssistDrawer', () => {
     const reviewRegion = screen.getByRole('region', { name: 'Final demo order review' })
     expect(reviewRegion).toBeInTheDocument()
     expect(reviewRegion).toHaveTextContent(/type yes, confirm, place order, or go ahead/i)
-    expect(screen.getByText(/no payment occurs and no email is sent/i)).toBeInTheDocument()
+    expect(screen.getByText(/transactional email is sent only after you confirm/i)).toBeInTheDocument()
 
     rerender(
       <ShopAssistDrawer
@@ -551,6 +554,7 @@ describe('ShopAssistDrawer', () => {
     expect(screen.getByRole('region', { name: 'Demo order receipt' })).toBeInTheDocument()
     expect(screen.getByText(orderReceipt.order_id)).toBeInTheDocument()
     expect(screen.getByText(/no real payment was processed/i)).toBeInTheDocument()
+    expect(screen.getByText(/transactional confirmation email sent/i)).toBeInTheDocument()
   })
 
   it('removes a consumed proposal instead of leaving it below the next response', () => {

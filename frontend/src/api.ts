@@ -348,6 +348,9 @@ export interface OrderReceipt {
   monthly_total_minor: number
   created_at: string
   idempotent_replay: boolean
+  email_status: 'pending' | 'sending' | 'sent' | 'failed'
+  email_attempts: number
+  email_provider: string | null
 }
 
 export interface AbandonmentStatus {
