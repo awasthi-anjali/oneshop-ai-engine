@@ -281,12 +281,12 @@ class ShopAssistService:
         if current_turn_style:
             assistant_context["current_turn_style"] = current_turn_style
 
+        if is_prompt_injection_or_off_topic(lowered):
+            return self._boundary_response(sid, state, text, "unsupported")
+
         conversational_response = self._conversational_response(sid, state, text, lowered)
         if conversational_response is not None:
             return conversational_response
-
-        if is_prompt_injection_or_off_topic(lowered):
-            return self._boundary_response(sid, state, text, "unsupported")
 
         reference_patch = self._memory_reference_patch(
             lowered,
@@ -398,12 +398,12 @@ class ShopAssistService:
                 return self._response(
                     sid,
                     state,
-                    ChatStatus.NO_MATCH,
+                    ChatStatus.CLARIFYING,
                     "Your cart is empty. Add an item before starting demo checkout.",
                     [],
                     [],
                     mode,
-                    selected_tool="checkout",
+                    selected_tool="start_checkout",
                     cart_summary=summary,
                 )
             return self._response(
@@ -423,7 +423,7 @@ class ShopAssistService:
                     )
                 ],
                 mode,
-                selected_tool="checkout",
+                selected_tool="start_checkout",
                 cart_summary=summary,
                 open_checkout=True,
             )

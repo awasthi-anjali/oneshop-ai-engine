@@ -201,7 +201,7 @@ class CartSummary(BaseModel):
 class CartProposal(BaseModel):
     proposal_id: str
     operation: str = Field(default="add", pattern=r"^(add|remove)$")
-    cart_version: int = Field(ge=0)
+    cart_version: int = Field(default=0, ge=0)
     products: list[Product] = Field(..., min_length=1, max_length=20)
     product_ids: list[str] = Field(..., min_length=1, max_length=20)
     excluded_product_ids: list[str] = Field(default_factory=list)

@@ -77,6 +77,15 @@ def _reason_data(product: Any, components: dict[str, float], cold_start: bool) -
     if not reasons:
         reasons.append("CATALOG_POPULARITY")
         facts.append(f"its catalog rating is {product.rating:.1f}/5")
+    elif not any(
+        product.brand in fact
+        or any(
+            phrase in fact
+            for phrase in ("catalog price", "normalized query", "recently viewed", "catalog rating")
+        )
+        for fact in facts
+    ):
+        facts.append(f"its catalog rating is {product.rating:.1f}/5")
     return reasons, "Recommended because " + "; ".join(facts) + "."
 
 
